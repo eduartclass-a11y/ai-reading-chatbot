@@ -53,6 +53,9 @@
 
     <!-- React 컴포넌트 및 앱 로직 -->
     <script type="text/babel">
+        const AI_PROXY_URL =
+    	"https://green-term-ff7e.eduartclass.workers.dev";
+
         // 전역 'firebase' 객체를 사용합니다.
         const { useState, useRef, useEffect } = React;
 
@@ -1998,4 +2001,5 @@ ${noItems.map(item => `- ${item}`).join('\n')}
         root.render(<App />);
     </script>
 </body>
+
 </html>
