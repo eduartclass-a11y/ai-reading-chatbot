@@ -1,0 +1,2001 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 독서-토론-글쓰기 챗봇</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel CDN (JSX for browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Firebase v9 compatibility (namespaced) libraries -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
+    <style>
+        /* Inter 폰트 및 Noto Sans KR 폰트 */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+        }
+        /* 커스텀 스크롤바 */
+        .overflow-y-auto::-webkit-scrollbar {
+            width: 6px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 3px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-track {
+            background-color: #f1f5f9;
+        }
+        /* Chrome, Safari, Edge, Opera에서 숫자 입력창 화살표 숨기기 */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        /* Firefox에서 숫자 입력창 화살표 숨기기 */
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <!-- React 앱이 렌더링될 루트 요소 -->
+    <div id="root"></div>
+
+    <!-- React 컴포넌트 및 앱 로직 -->
+    <script type="text/babel">
+        // 전역 'firebase' 객체를 사용합니다.
+        const { useState, useRef, useEffect } = React;
+
+        // --- Firebase Configuration ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined'
+            ? JSON.parse(__firebase_config)
+            : { apiKey: "YOUR_FALLBACK_API_KEY", authDomain: "...", projectId: "..." }; // Fallback
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // --- Initialize Firebase ---
+        let app;
+        let db;
+        let auth;
+        try {
+            app = firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore(app);
+            auth = firebase.auth(app);
+        } catch (error) {
+            console.log("Firebase already initialized or config error:", error);
+        }
+
+        // --- 읽기 자료 및 퀴즈 데이터 ---
+        const readingMaterials = [
+            {
+                id: 1,
+                title: "NFT 미술의 예술적 가치",
+                url: "https://www.hankookilbo.com/News/Read/A2022081816570004278",
+                summary: "NFT 아트가 진정한 예술적 가치를 지니는지, 미술계의 낙관론과 비관론을 통해 살펴봅니다."
+            },
+            {
+                id: 2,
+                title: "AI 미술과 저작권",
+                url: "https://www.samsungsds.com/kr/insights/ai-copyright-240813.html",
+                summary: "생성형 AI가 만든 창작물의 저작권은 누구에게 있는지, 국내외 사례와 법적 쟁점을 알아봅니다."
+            },
+            {
+                id: 3,
+                title: "미술 시장의 상업화와 예술의 본질",
+                url: "https://www.newspim.com/news/view/20241222000164",
+                summary: "미술품이 투자 수단으로 변모하는 현상을 통해 예술의 본질적 가치와 상업적 가치의 관계를 고찰합니다."
+            },
+            {
+                id: 4,
+                title: "공공미술 조형물 설치",
+                url: "https://www.m-joongang.com/news/articleView.html?idxno=334218",
+                summary: "도심 속 공공미술 조형물이 '흉물' 논란에 휩싸이는 이유와 문제 해결 방안을 모색합니다."
+            },
+            {
+                id: 5,
+                title: "예술가, 젠트리피케이션 그리고 도시재생",
+                url: "https://www.lak.co.kr/greenn/view.php?id=&cid=668",
+                summary: "예술가들이 낡은 도심에 활기를 불어넣지만, 젠트리피케이션으로 인해 떠나야 하는 현상과 그 대안을 다룹니다."
+            }
+        ];
+
+        const quizData = {
+            1: [
+                { type: 'ox', question: "NFT 아트의 핵심 기능은 디지털 파일에 '원본'의 성격을 부여하는 것이다.", answer: 'o', explanation: "본문에 따르면 NFT는 무제한 복제가 가능한 디지털 파일에 '원본성'을 증명하는 핵심적인 기능을 합니다." },
+                { type: 'mcq', question: "NFT 아트에 대한 비관론적 견해가 아닌 것은?", options: ["파생상품에 불과하다.", "미술 시장의 대중화를 촉진한다.", "예술적 성취를 찾기 어렵다.", "'플렉스(과시) 문화'의 산물이다."], answer: "미술 시장의 대중화를 촉진한다.", explanation: "'미술 시장의 대중화 촉진'은 NFT 아트에 대한 낙관론적 견해에 해당합니다." },
+                { type: 'short', question: "NFT는 '대체불가토큰'의 영문 약자입니다. 전체 영문 명칭을 쓰시오.", answer: "Non-Fungible Token", explanation: "NFT는 Non-Fungible Token의 약자입니다." }
+            ],
+            2: [
+                { type: 'ox', question: "현재 대한민국 저작권법은 AI를 저작자로 인정하고 있다.", answer: 'x', explanation: "대한민국 저작권법은 인간의 사상 또는 감정을 표현한 창작물만을 저작물로 인정하며, AI는 저작자가 될 수 없습니다." },
+                { type: 'mcq', question: "미국 저작권청(USCO)이 AI 생성 이미지 '스페이스 오페라 극장'에 대해 내린 결론은?", options: ["작품 전체의 저작권을 인정했다.", "AI가 저작자임을 인정했다.", "인간이 창작한 부분만 저작권을 인정했다.", "저작권 등록을 완전히 거부했다."], answer: "인간이 창작한 부분만 저작권을 인정했다.", explanation: "미국 저작권청은 AI가 생성한 이미지는 저작권 등록이 불가하지만, 인간이 이미지를 배열하고 구성한 부분에 대해서는 저작권을 인정했습니다." },
+                { type: 'short', question: "AI가 학습 데이터의 저작권을 침해하지 않고 자유롭게 이용할 수 있도록 허용하는 법적 개념을 무엇이라고 할까요? (세 글자)", answer: "면책규정", explanation: "AI 산업 발전을 위해 저작권자의 허락 없이도 저작물을 이용할 수 있도록 하는 '면책규정' 도입이 논의되고 있습니다." }
+            ],
+            3: [
+                { type: 'ox', question: "미술품을 사서 가격이 오르면 되파는 투자 방식을 '아트테크'라고 한다.", answer: 'o', explanation: "기사에 따르면, 아트(Art)와 재테크(Tech)의 합성어인 '아트테크'는 미술품을 통해 수익을 창출하는 새로운 투자 방식입니다." },
+                { type: 'mcq', question: "MZ세대가 미술 시장의 큰 손으로 떠오른 이유로 적절하지 않은 것은?", options: ["자산을 과시하려는 욕구", "소유의 경험을 중시하는 경향", "전통적인 투자 방식 선호", "한정판, 명품 등에 대한 높은 관심"], answer: "전통적인 투자 방식 선호", explanation: "MZ세대는 전통적인 투자 방식보다는 새롭고 경험을 중시하는 투자, 즉 아트테크에 더 많은 관심을 보입니다." },
+                { type: 'short', question: "여러 사람이 돈을 모아 고가의 미술품을 공동으로 소유하는 투자 방식을 무엇이라고 할까요?", answer: "조각투자", explanation: "미술품 조각투자는 고가의 작품을 여러 조각으로 나눠 소유권을 판매하는 방식으로, 소액 투자를 가능하게 합니다." }
+            ],
+            4: [
+                { type: 'ox', question: "건축물 미술작품 제도는 일정 규모 이상의 건축물에 미술작품 설치를 의무화한 제도이다.", answer: 'o', explanation: "이 제도는 연면적 1만 제곱미터 이상의 신·증축 건축물에 건축 비용의 일정 비율에 해당하는 금액의 미술작품을 설치하도록 규정합니다." },
+                { type: 'mcq', question: "공공미술 작품이 흉물 논란에 휩싸이는 가장 큰 이유는?", options: ["작품의 가격이 너무 비싸서", "작품의 크기가 너무 작아서", "시민들과의 소통 및 공감대 부재", "유명 작가의 작품이 아니어서"], answer: "시민들과의 소통 및 공감대 부재", explanation: "기사에서는 작가나 건축주의 일방적인 작품 선정, 시민과의 소통 부재가 흉물 논란의 핵심 원인이라고 지적합니다." },
+                { type: 'short', question: "건축물 미술작품 제도의 문제점을 개선하기 위해 도입된 제도로, 미술작품 설치 비용을 기금으로 출연하여 공공미술 진흥에 사용하는 방식은 무엇인가요?", answer: "선택적 기금제", explanation: "선택적 기금제는 작품을 직접 설치하는 대신 비용을 기금으로 납부하여 공공미술 발전에 사용하도록 하는 대안입니다." }
+            ],
+            5: [
+                { type: 'ox', question: "젠트리피케이션은 도심이 활성화되면서 원주민들이 내몰리는 현상을 의미한다.", answer: 'o', explanation: "젠트리피케이션은 낙후된 구도심이 번성하며 임대료가 오르고, 그 결과 원주민과 기존 상인들이 다른 곳으로 밀려나는 현상을 말합니다." },
+                { type: 'mcq', question: "젠트리피케이션 과정에서 예술가들이 겪는 가장 큰 어려움은 무엇인가?", options: ["창작 아이디어 고갈", "급등하는 임대료 부담", "대중의 무관심", "정부의 과도한 간섭"], answer: "급등하는 임대료 부담", explanation: "예술가들이 지역을 활성화시키면 임대료가 급등하여, 정작 그들 자신은 그곳을 떠나야 하는 상황에 처하게 됩니다." },
+                { type: 'short', question: "젠트리피케이션의 대안으로, 지역 고유의 정체성을 유지하며 점진적으로 개발하는 도시재생 방식을 무엇이라고 할까요?", answer: "지속가능한 도시재생", explanation: "지속가능한 도시재생은 개발 논리보다 지역의 역사와 문화를 보존하며 상생하는 것을 목표로 합니다." }
+            ]
+        };
+
+        // 자기 점검 체크리스트 (자기 점검 체크리스트2.pdf 기반)
+        const selfChecklistItems = [
+            {
+                category: "■ 내용 점검",
+                questions: [
+                    "내 입장이 서론에서 명확히 드러나는가?",
+                    "본론의 각 근거가 주장을 뒷받침하는가?",
+                    "구체적 사례가 적절히 제시되었는가?",
+                    "반대 의견에 대한 반박이 설득력 있는가?",
+                    "결론에서 입장이 재확인되는가?"
+                ]
+            },
+            {
+                category: "■ 구조 점검",
+                questions: [
+                    "서론-본론-결론 구조가 명확한가?",
+                    "각 본론 문단이 PEEL 구조를 따르는가? (주제문-근거-사례-분석)",
+                    "단락 간 연결이 자연스러운가?",
+                    "연결어(첫째, 둘째, 따라서 등)를 적절히 사용했는가?",
+                    "전체적으로 논리의 흐름이 일관되는가?"
+                ]
+            },
+            {
+                category: "■ 표현 점검",
+                questions: [
+                    "문장이 명확하고 이해하기 쉬운가?",
+                    "전문 용어를 적절히 설명했는가?",
+                    "어휘가 다양하고 적절한가?",
+                    "맞춤법과 문법이 정확한가?",
+                    "문장의 길이가 적절한가? (너무 길거나 짧지 않은가?)"
+                ]
+            },
+            {
+                category: "■ 논리 점검",
+                questions: [
+                    "주장과 근거가 논리적으로 연결되는가?",
+                    "논리적 비약이나 오류가 없는가?",
+                    "근거가 충분히 구체적인가?",
+                    "사실과 의견을 구분했는가?",
+                    "반대 의견을 공정하게 다뤘는가?"
+                ]
+            }
+        ]; // 총 20개 질문
+
+        // 성찰적 자기 평가 질문
+        const selfEvaluationQuestions = [
+            { id: 'self_eval_1_good', prompt: "【성찰적 자기 평가】\n\n1. 잘된 점은 무엇인가?" },
+            { id: 'self_eval_2_lacking', prompt: "2. 아쉬운 점은 무엇인가?" },
+            { id: 'self_eval_3_difficult', prompt: "3. 어떤 부분이 어려웠는가?" },
+            { id: 'self_eval_4_learned', prompt: "4. 무엇을 배웠는가?" },
+            { id: 'self_eval_5_improve', prompt: "5. 다음에는 어떻게 개선하고 싶은가?" }
+        ];
+
+        // --- 글쓰기 단계별 문장 구조 ---
+        const structureMessages = {
+          intro: "【서론의 구조】\n1. 흥미로운 도입 (구체적 사례)\n2. 문제 상황 설명\n3. 나의 입장 제시",
+          body: "【본론 문단 구조】\n1. 주제문 (이 문단의 핵심)\n2. 근거 설명 (2~3문장)\n3. 구체적 사례\n4. 분석 및 결론",
+          conclusion: "【결론의 구조】\n1. 주요 논점 요약\n2. 입장 재확인\n3. 향후 전망이나 제언"
+        };
+
+        // --- 글쓰기 단계별 가이드 헬퍼 함수 ---
+        const getWritingInstructions = (step) => {
+            // [MODIFIED] 제목 관련 단계 세분화
+            switch (step) {
+                case 'title_candidates':
+                    return "논증형 에세이 쓰기를 시작합니다.\n\n먼저 에세이의 [제목 후보 3가지]를 생각해보고, 한 번에 하나씩 입력해주세요. (총 3번 입력)\n\n좋은 제목은:\n- 글의 핵심 내용을 담고 있어야 합니다.\n- 독자의 호기심을 자극해야 합니다.\n- 너무 길지 않아야 합니다(10-15자 권장).\n\n첫 번째 제목 후보를 입력해주세요.";
+                case 'title_final':
+                    return "좋은 후보들입니다. \n\n이제 위 후보 중에서 (혹은 새로 생각해낸) [최종 제목]을 하나만 입력해주세요.";
+                case 'title_reason':
+                    return "제목이 결정되었습니다. \n\n그 제목을 선택한 [이유]를 간단히 설명해주세요.";
+                case 'intro_structure_prompt': 
+                    return "제목과 이유 모두 좋습니다!\n\n이제 서론 쓰기를 시작하겠습니다. [서론 구조 보기] 버튼을 눌러 구조를 먼저 확인해보세요.";
+                case 'intro_hook':
+                    return "좋습니다. 서론의 구조를 확인하셨군요.\n\n이제 서론의 [도입부]를 작성해봅시다. 독자의 흥미를 유발할 수 있도록 2~3문장으로 생생하게 작성해보세요.\n\n효과적인 도입 방법:\n- 최근 뉴스나 화제가 된 사건\n- 구체적인 통계나 사실\n- 흥미로운 질문\n- 인상적인 사례\n\n(예: '2021년, 디지털 아티스트 비플의 NFT 작품이 약 6900만 달러에 낙찰되며 전 세계를 놀라게 했습니다.')\n\n도입부 문장을 입력해주세요.";
+                case 'intro_context':
+                    return "좋습니다! 독자의 관심을 끌기 좋은 도입부입니다.\n\n다음은 서론의 [문제 상황] 부분입니다. 이 주제(예: NFT)에 대해 어떤 의견 대립이나 논쟁이 있는지 2~3문장으로 설명해주세요.\n\n(예: '미술계 일각에서는 디지털 시대의 혁신적 예술 형식으로 평가하지만, 비평가들은 단순한 투기 수단에 불과하다고 비판합니다.')\n\n문제 상황을 설명하는 문장을 입력해주세요.";
+                case 'intro_stance':
+                    return "문제 상황이 명확하게 드러났네요.\n\n이제 서론의 마지막, 당신의 [입장/주장]을 명확하게 한 문장으로 제시해주세요.\n\n(예: '나는 NFT가 디지털 시대의 정당한 예술 형식으로 인정받을 수 있다고 생각한다.')\n\n당신의 입장을 입력해주세요.";
+                case 'body_structure_prompt': 
+                    return "서론이 완성되었습니다! 훌륭합니다.\n\n이제 본론 쓰기를 시작하겠습니다. [본론 구조 보기] 버튼을 눌러 구조를 먼저 확인해보세요.";
+                case 'body1_topic':
+                    return "좋습니다. 본론의 구조를 확인하셨군요.\n\n이제 본론의 첫 번째 문단을 시작하겠습니다. 당신의 주장을 뒷받침할 [첫 번째 주제문(Topic Sentence)]을 '첫째, ...'의 형태로 작성해주세요.\n\n(예: '첫째, 예술의 정의는 시대에 따라 변해왔기 때문입니다.')\n\n본론 1의 주제문을 입력해주세요.";
+                case 'body1_evidence':
+                    return "명확한 주제문입니다.\n\n이제 그 주제문을 뒷받침할 [근거 설명(Evidence/Explanation)]을 2~3문장으로 작성해주세요.\n\n(예: '과거 사진이 등장했을 때도 예술이 아니라는 비판을 받았습니다. 그러나 지금은 사진을 예술로 인정합니다. 영화와 비디오 아트도 마찬가지입니다.')\n\n근거를 설명하는 문장을 입력해주세요.";
+                case 'body1_example':
+                    return "근거 설명이 좋습니다.\n\n이제 그 근거를 더 설득력 있게 만들어 줄 [구체적 사례(Example)]를 제시해주세요.\n\n(예: '앙리 카르티에 브레송은 '결정적 순간'이라는 개념으로 사진의 예술성을 증명했습니다.')\n\n구체적인 사례를 입력해주세요.";
+                case 'body1_analysis':
+                    return "적절한 사례입니다.\n\n마지막으로, 이 사례가 당신의 주제문(및 전체 주장)과 [어떻게 연결되는지 분석(Analysis/Link)]하는 문장을 작성하여 문단을 마무리해주세요.\n\n(예: '이는 새로운 매체가 고유한 예술적 표현을 가능하게 할 때 예술로 인정받음을 보여줍니다. NFT도 ...')\n\n분석 및 연결 문장을 입력해주세요.";
+                case 'body2_topic':
+                    return "본론 1 문단이 훌륭하게 완성되었습니다!\n\n이제 본론의 두 번째 문단을 시작하겠습니다. 당신의 주장을 뒷받침할 [두 번째 주제문]을 '둘째, ...'의 형태로 작성해주세요.";
+                // ... (이후 본론 2, 본론 3, 결론 단계들도 위와 같이 추가)
+                case 'body3_counter':
+                    return "본론 2 문단도 잘 작성하셨습니다.\n\n이제 [반대 의견 제시 및 반박] 문단을 작성해봅시다. 먼저, 예상되는 반대 의견(반론)을 공정하게 제시해주세요.\n\n(예: '물론 NFT 시장에 투기 목적의 거래가 많다는 비판이 있습니다.')\n\n예상되는 반론을 입력해주세요.";
+                case 'body3_rebuttal':
+                    return "반대 의견을 잘 제시했습니다.\n\n이제 그 반론을 논리적으로 [재반박]하는 내용을 작성해주세요.\n\n(예: '하지만 이는 전통 미술 시장도 마찬가지입니다. ... 작품의 거래 방식과 예술적 가치는 별개의 문제입니다.')\n\n재반박 내용을 입력해주세요.";
+                case 'conclusion_structure_prompt': 
+                    return "논리가 탄탄한 반박입니다! 본론이 모두 완성되었습니다.\n\n이제 [결론]을 작성해봅시다. [결론 구조 보기] 버튼을 눌러 구조를 먼저 확인해보세요.";
+                case 'conclusion_summary':
+                    return "좋습니다. 결론의 구조를 확인하셨군요.\n\n이제 [결론]을 작성해봅시다. 먼저, 서론과 본론의 핵심 내용을 요약해주세요.\n\n(예: '이처럼 NFT는 예술의 역사적 확장선 위에 있으며, 투기 문제는 예술성의 본질이 아닙니다.')\n\n요약 문장을 입력해주세요.";
+                case 'conclusion_outlook':
+                    return "요약이 잘 되었습니다.\n\n마지막으로, 당신의 [입장을 재확인]하고, 이 주제에 대한 [제언이나 전망]을 제시하며 글을 마무리해주세요.\n\n(예: '따라서 NFT는 디지털 시대의 새로운 예술로 인정해야 합니다. ... 건강한 생태계를 만드는 노력이 필요합니다.')\n\n마무리 문장을 입력해주세요.";
+                case 'self_check_start':
+                    return "정말 대단합니다! 멋진 논증형 에세이가 완성되었습니다.\n\n이제 마지막으로 【자기 점검 체크리스트】를 통해 스스로 글을 점검해봅시다.\n전체 글을 다시 읽어보면서 아래 항목에 'Yes' 또는 'No'로 응답해주세요.";
+                default:
+                    return "글쓰기 단계를 준비 중입니다.";
+            }
+        };
+
+        // --- 다음 글쓰기 단계 헬퍼 함수 ---
+        const getNextWritingStep = (currentStep) => {
+            // [MODIFIED] 제목 단계 세분화
+            const stepOrder = [
+                'title_candidates', 'title_candidates', 'title_candidates', // 3번 입력
+                'title_final', 'title_reason',
+                'intro_structure_prompt', 
+                'intro_hook', 'intro_context', 'intro_stance',
+                'body_structure_prompt', 
+                'body1_topic', 'body1_evidence', 'body1_example', 'body1_analysis',
+                'body2_topic', // (간략화를 위해 본론 2, 3의 세부 단계 생략)
+                'body3_counter', 'body3_rebuttal',
+                'conclusion_structure_prompt', 
+                'conclusion_summary', 'conclusion_outlook',
+                'essay_complete', 
+                'self_check_start'
+            ];
+            
+            // [MODIFIED] 제목 후보 3번 받는 로직
+            if (currentStep === 'title_candidates') {
+                const candidates = (essayContent['title_candidates'] || []).length;
+                if (candidates < 2) { // 0 -> 1, 1 -> 2
+                    return 'title_candidates'; // Stay on the same step
+                } else { // 2 -> 3
+                    return 'title_final'; // Move to next step
+                }
+            }
+
+            const currentIndex = stepOrder.indexOf(currentStep);
+            if (currentIndex !== -1 && currentIndex < stepOrder.length - 1) {
+                return stepOrder[currentIndex + 1];
+            }
+            return 'self_check_start'; // 마지막 단계 후 자기 점검으로
+        };
+
+        // [NEW] 다운로드 헬퍼 함수
+        const downloadAsFile = (filename, content) => {
+            const element = document.createElement('a');
+            const file = new Blob([content], {type: 'text/plain;charset=utf-8'});
+            element.href = URL.createObjectURL(file);
+            element.download = filename;
+            document.body.appendChild(element); // Required for this to work in FireFox
+            element.click();
+            document.body.removeChild(element);
+        };
+
+
+        // --- 메인 App 컴포넌트 ---
+        function App() {
+            // --- 상태(State) 정의 ---
+            const [step, setStep] = useState('info'); 
+            // [MODIFIED] userInfo 상태 변경
+            const [userInfo, setUserInfo] = useState({
+                grade: '',
+                classNum: '',
+                studentNum: '',
+                name: ''
+            });
+            
+            // 독서 활동 상태
+            const [readingStep, setReadingStep] = useState('list'); 
+            const [readingActivityData, setReadingActivityData] = useState({}); 
+            const [dynamicQuizData, setDynamicQuizData] = useState(null); 
+            
+            const [selectedArticleId, setSelectedArticleId] = useState(null); 
+            const [quizAnswers, setQuizAnswers] = useState([]);
+            const [showFeedback, setShowFeedback] = useState([]);
+            const [quizSubmitted, setQuizSubmitted] = useState(false);
+            const [allCorrect, setAllCorrect] = useState(false);
+            
+            const [discussionHistory, setDiscussionHistory] = useState([]);
+            const [debateStep, setDebateStep] = useState('topic');
+            const [debateTopic, setDebateTopic] = useState(''); 
+            
+            const [writingStep, setWritingStep] = useState('title_candidates'); // [MODIFIED] 시작 단계 변경
+            const [essayContent, setEssayContent] = useState({});
+            
+            const [checklistAnswers, setChecklistAnswers] = useState({});
+            const [checklistProgress, setChecklistProgress] = useState({ categoryIndex: 0, questionIndex: 0 }); 
+            
+            const [awaitingRevisionChoice, setAwaitingRevisionChoice] = useState(false);
+            const [awaitingStructureConfirmation, setAwaitingStructureConfirmation] = useState({ show: false, type: null });
+
+            const [finalStepProgress, setFinalStepProgress] = useState('start');
+            const [reflection, setReflection] = useState('');
+            
+            const [isLoading, setIsLoading] = useState(false);
+            const [sessionId, setSessionId] = useState(null); 
+            const [currentInput, setCurrentInput] = useState('');
+            const chatEndRef = useRef(null); 
+
+            // --- 이펙트(Effect) ---
+            
+            // Firebase 인증
+            useEffect(() => {
+                const authenticateUser = async () => {
+                    if (!auth) {
+                        console.error("Firebase auth is not initialized.");
+                        return;
+                    }
+                    try {
+                        let userCredential;
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            userCredential = await auth.signInWithCustomToken(__initial_auth_token);
+                            console.log("Signed in with Custom Token:", userCredential.user.uid);
+                        } else {
+                            userCredential = await auth.signInAnonymously();
+                            console.log("Signed in Anonymously:", userCredential.user.uid);
+                        }
+                        setSessionId(`${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+                    } catch (error) {
+                        console.error("Firebase authentication error:", error);
+                    }
+                };
+                
+                if(auth) authenticateUser();
+            }, []); 
+
+            // 채팅 스크롤
+            useEffect(() => {
+                chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [discussionHistory, finalStepProgress]);
+
+            // --- 핵심 핸들러 함수 ---
+            
+            // Gemini API 호출
+            const generateAlFeedback = async (prompt, useJson = false) => {
+                setIsLoading(true);
+                try {
+                    const systemPrompt = "당신은 학생의 논리적 사고와 글쓰기를 돕는 친절하고 격려하는 튜터입니다. 학생의 입력을 평가하고 점진적인 개선을 유도하는 피드백을 제공합니다.";
+                    const userQuery = prompt;
+                    const apiKey = ""; 
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: {
+                            parts: [{ text: systemPrompt }]
+                        },
+                    };
+                    
+                    if (useJson) {
+                        payload.generationConfig = {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    quiz: {
+                                        type: "ARRAY",
+                                        items: {
+                                            type: "OBJECT",
+                                            properties: {
+                                                type: { "type": "STRING" },
+                                                question: { "type": "STRING" },
+                                                answer: { "type": "STRING" },
+                                                options: { 
+                                                    type: "ARRAY", 
+                                                    items: { "type": "STRING" } 
+                                                },
+                                                explanation: { "type": "STRING" }
+                                            },
+                                            "required": ["type", "question", "answer", "explanation"]
+                                        }
+                                    }
+                                },
+                                "required": ["quiz"]
+                            }
+                        };
+                    }
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+                    
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates[0].content?.parts?.[0]?.text) {
+                        return result.candidates[0].content.parts[0].text;
+                    } else {
+                        return "죄송합니다. 피드백을 생성하는 데 문제가 발생했습니다.";
+                    }
+                } catch (error) {
+                    console.error("Error generating Al feedback:", error);
+                    return "오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.";
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            
+            // Firestore 데이터 저장
+            const saveData = async (data) => {
+                if (!sessionId || !db || !auth || !auth.currentUser) {
+                    console.error("Session ID, DB, or User not set. Cannot save data.");
+                    return;
+                }
+                const userId = auth.currentUser.uid;
+                const docPath = `artifacts/${appId}/users/${userId}/student_sessions/${sessionId}`;
+                try {
+                    const docRef = db.doc(docPath);
+                    await docRef.set(data, { merge: true }); 
+                    console.log("Data saved successfully for session:", sessionId);
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                }
+            };
+
+            // 1단계: 학생 정보 제출
+            const handleUserInfoSubmit = (e) => {
+                e.preventDefault();
+                // [MODIFIED] 유효성 검사
+                if (userInfo.grade && userInfo.classNum && userInfo.studentNum && userInfo.name) {
+                    setStep('hub');
+                    saveData({
+                        userInfo: userInfo,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            };
+            
+            // --- 독서 활동 핸들러 ---
+            const handleSelectReadingArticle = (material) => {
+                setSelectedArticleId(material.id); 
+                const newReadingData = { selectedArticle: material };
+                setReadingActivityData(newReadingData);
+                saveData({ readingActivityData: newReadingData });
+
+                setReadingStep('pre_1_reason');
+                addMessage('ai', `[${material.title}]을(를) 선택하셨습니다.\n\n[읽기 전 활동]을 시작하겠습니다.\n\n1. 이 주제를 선택한 이유는 무엇인가요?`);
+            };
+
+            const handleStartCustomArticle = () => {
+                setSelectedArticleId('custom'); 
+                setDynamicQuizData(null); 
+                const newReadingData = { selectedArticle: { id: 'custom', title: '', url: '' } };
+                setReadingActivityData(newReadingData);
+                
+                setReadingStep('custom_material_title');
+                addMessage('ai', ' [기타 자료] 활동을 시작합니다.\n\n읽으신 (또는 읽을) 자료의 [제목]을 입력해주세요.');
+            };
+
+            // AI 기반 동적 퀴즈 생성
+            const generateDynamicQuiz = async (title, url) => {
+                setIsLoading(true);
+                addMessage('ai', `입력하신 자료(제목: ${title})를 바탕으로 퀴즈를 생성 중입니다. 잠시만 기다려주세요...`);
+                
+                const prompt = `주제: "${title}" (참고 URL: ${url})\n이 주제와 관련된 퀴즈 3개를 다음 JSON 스키마에 맞춰 생성해주세요:
+1.  type: "ox", question: (OX 질문), answer: (o 또는 x), explanation: (해설)
+2.  type: "mcq", question: (4지 선다형 질문), options: [4개 옵션 배열], answer: (정답 옵션), explanation: (해설)
+3.  type: "short", question: (단답형 질문), answer: (정답 단어), explanation: (해설)`;
+
+                try {
+                    const jsonResponse = await generateAlFeedback(prompt, true); // JSON 모드 활성화
+                    const parsedData = JSON.parse(jsonResponse);
+                    
+                    if (parsedData.quiz && parsedData.quiz.length === 3) {
+                        setDynamicQuizData(parsedData.quiz); // 상태에 퀴즈 데이터 저장
+                        addMessage('ai', '퀴즈 생성이 완료되었습니다. [독서 퀴즈] 버튼을 눌러주세요.');
+                        setReadingStep('quiz_start');
+                    } else {
+                        throw new Error("Invalid quiz structure received.");
+                    }
+                } catch (error) {
+                    console.error("Error generating dynamic quiz:", error);
+                    addMessage('ai', '퀴즈 생성 중 오류가 발생했습니다. 퀴즈 없이 활동을 종료합니다. [메뉴로 가기] 버튼을 눌러주세요.');
+                    setReadingStep('quiz_complete'); // 오류 시 퀴즈 건너뛰기
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleReadingFlow = async (userInput) => {
+                addMessage('user', userInput);
+                setCurrentInput('');
+                setIsLoading(true);
+
+                const currentReadingStep = readingStep;
+                let newReadingData = { ...readingActivityData, [currentReadingStep]: userInput };
+                
+                // 기타 자료 제목/URL 저장
+                if (currentReadingStep === 'custom_material_title') {
+                    newReadingData.selectedArticle.title = userInput;
+                } else if (currentReadingStep === 'custom_material_url') {
+                    newReadingData.selectedArticle.url = userInput;
+                }
+                
+                setReadingActivityData(newReadingData);
+                saveData({ readingActivityData: newReadingData });
+
+                let nextReadingStep = '';
+                let aiMessage = '';
+
+                switch (currentReadingStep) {
+                    case 'custom_material_title':
+                        nextReadingStep = 'custom_material_url';
+                        aiMessage = '자료의 URL 주소를 입력해주세요. (없다면 "없음"이라고 입력)'; // [FIXED]
+                        break;
+                    case 'custom_material_url':
+                        nextReadingStep = 'pre_1_reason';
+                        aiMessage = `[${newReadingData.selectedArticle.title}] 자료가 등록되었습니다.\n\n[읽기 전 활동]을 시작하겠습니다.\n\n1. 이 주제를 선택한 이유는 무엇인가요?`;
+                        break;
+
+                    // 1. 읽기 전 활동
+                    case 'pre_1_reason':
+                        nextReadingStep = 'pre_2_knowledge';
+                        aiMessage = '2. 이 주제에 대해 이미 알고 있는 것은 무엇인가요?';
+                        break;
+                    case 'pre_2_knowledge':
+                        nextReadingStep = 'pre_3_goal';
+                        aiMessage = '3. 이 글을 읽으며 알고 싶은 것은 무엇인가요?';
+                        break;
+                    case 'pre_3_goal':
+                        nextReadingStep = 'during_0_link';
+                        aiMessage = '[읽기 전 활동]이 완료되었습니다. \n\n[읽기 중 활동]을 시작합니다. \n\n아래 [읽기 자료 보기] 버튼을 눌러 자료를 읽으신 후, [읽기 중 활동 시작] 버튼을 눌러주세요.';
+                        break;
+                    
+                    // 2. 읽기 중 활동
+                    case 'during_1_topic':
+                        nextReadingStep = 'during_2_term1';
+                        aiMessage = '글의 중심 주제를 잘 찾으셨네요. \n\n이제 첫 번째 [주요 용어]와 그 [설명]을 입력해주세요. (예: NFT - 대체 불가능한 토큰)';
+                        break;
+                    case 'during_2_term1':
+                        nextReadingStep = 'during_3_term2';
+                        aiMessage = '두 번째 [주요 용어]와 [설명]을 입력해주세요.';
+                        break;
+                    case 'during_3_term2':
+                        nextReadingStep = 'during_4_term3';
+                        aiMessage = '세 번째 [주요 용어]와 [설명]을 입력해주세요.';
+                        break;
+                    case 'during_4_term3':
+                        nextReadingStep = 'during_5_pro1';
+                        aiMessage = '주요 용어 정리가 끝났습니다. \n\n이제 이 주제에 대한 첫 번째 [찬성 의견]을 입력해주세요.';
+                        break;
+                    case 'during_5_pro1':
+                        nextReadingStep = 'during_6_pro2';
+                        aiMessage = '두 번째 [찬성 의견]을 입력해주세요.';
+                        break;
+                    case 'during_6_pro2':
+                        nextReadingStep = 'during_7_con1';
+                        aiMessage = '찬성 의견을 잘 정리했습니다. \n\n이제 첫 번째 [반대 의견]을 입력해주세요.';
+                        break;
+                    case 'during_7_con1':
+                        nextReadingStep = 'during_8_con2';
+                        aiMessage = '두 번째 [반대 의견]을 입력해주세요.';
+                        break;
+                    case 'during_8_con2':
+                        nextReadingStep = 'during_9_difficulty';
+                        aiMessage = '찬반 의견 정리가 끝났습니다. \n\n글을 읽으면서 [이해가 어려운 부분]이 있었다면 적어주세요.';
+                        break;
+                    case 'during_9_difficulty':
+                        nextReadingStep = 'during_10_impression';
+                        aiMessage = '마지막으로, [인상 깊은 문장이나 통계]가 있었다면 적어주세요.';
+                        break;
+                    case 'during_10_impression':
+                        nextReadingStep = 'post_1_my_summary';
+                        aiMessage = '[읽기 중 활동]이 완료되었습니다. \n\n[읽기 후 활동]을 시작합니다. \n\n먼저, 읽으신 내용을 200~300자로 요약하여 입력해주세요.';
+                        break;
+                    
+                    // 3. 읽기 후 활동
+                    case 'post_1_my_summary':
+                        nextReadingStep = 'post_2_ai_summary';
+                        aiMessage = '좋은 요약입니다. \n\n이제 NotebookLM 사이트와 같은 AI 도구를 사용하여 같은 자료를 요약한 후, 그 [AI가 요약한 내용]을 복사하여 붙여넣어주세요. 비교 분석을 도와드리겠습니다.';
+                        break;
+                    // [MODIFIED] AI 비교 삭제, 학생 분석 단계 추가
+                    case 'post_2_ai_summary':
+                        nextReadingStep = 'post_2b_self_comparison';
+                        aiMessage = 'AI 요약이 입력되었습니다. \n\n이제 [나의 요약]과 [AI 요약]을 스스로 비교해보고, 두 요약의 [차이점과 개선점]을 분석하여 입력해주세요.';
+                        break;
+                    // [NEW] 학생 분석에 대한 피드백 단계
+                    case 'post_2b_self_comparison':
+                        const comparisonAnalysis = userInput;
+                        const feedbackPrompt = `학생이 자신의 요약과 AI의 요약을 비교 분석한 내용입니다: "${comparisonAnalysis}" \n\n이 분석에 대해 간단히 격려하는 피드백을 제공해주세요. (예: "좋은 분석입니다. 차이점을 잘 파악하셨네요.")`;
+                        
+                        addMessage('ai', '분석 내용을 검토 중입니다...');
+                        const aiFeedback = await generateAlFeedback(feedbackPrompt);
+                        
+                        aiMessage = `${aiFeedback}\n\n이 피드백과 스스로의 분석을 참고하여 '개선된 나의 요약'을 다시 작성해주세요.`;
+                        nextReadingStep = 'post_3_improved_summary';
+                        break;
+                    case 'post_3_improved_summary':
+                        nextReadingStep = 'stance_1_choice';
+                        aiMessage = '개선된 요약이 확인되었습니다. [읽기 후 활동]이 완료되었습니다. \n\n[나의 입장 정리] 활동을 시작하겠습니다. \n\n이 주제에 대한 당신의 입장은 무엇인가요?';
+                        break;
+
+                    // 4. 나의 입장 정리
+                    case 'stance_2_reason': // (stance_1_choice는 버튼으로 처리)
+                        nextReadingStep = 'stance_3_topic';
+                        aiMessage = '이유를 잘 적어주셨습니다. \n\n그렇다면 이 주제로 토론을 한다면, 가장 중요하게 다룰 [예상 토론 주제(핵심 질문)]은 무엇이라고 생각하시나요?';
+                        break;
+                    case 'stance_3_topic':
+                        // [NEW] 퀴즈 분기
+                        if (selectedArticleId === 'custom') {
+                            // AI 퀴즈 생성 로직 호출
+                            const { title, url } = newReadingData.selectedArticle;
+                            await generateDynamicQuiz(title, url);
+                            // aiMessage는 generateDynamicQuiz에서 설정하므로 여기서는 설정 안함
+                            nextReadingStep = 'quiz_start'; // generateDynamicQuiz가 완료되면 quiz_start로 설정됨
+                        } else {
+                            // 기존 퀴즈
+                            nextReadingStep = 'quiz_start';
+                            aiMessage = '[나의 입장 정리] 활동이 완료되었습니다. \n\n마지막으로 [독서 퀴즈] 버튼을 눌러 학습을 마무리해주세요.';
+                        }
+                        break;
+                    
+                    default:
+                        aiMessage = '진행 중입니다.';
+                }
+
+                setIsLoading(false);
+                // [MODIFIED] AI 피드백/퀴즈 생성 단계는 메시지를 자체적으로 처리
+                if (currentReadingStep !== 'post_2b_self_comparison' && currentReadingStep !== 'stance_3_topic') {
+                    addMessage('ai', aiMessage);
+                }
+                // [MODIFIED] AI 퀴즈 생성 시 nextReadingStep은 generateDynamicQuiz에서 설정
+                if (!(currentReadingStep === 'stance_3_topic' && selectedArticleId === 'custom')) {
+                    setReadingStep(nextReadingStep);
+                }
+            };
+            
+            const handleStartDuringActivity = () => {
+                setReadingStep('during_1_topic');
+                addMessage('ai', '자료를 다 읽으셨군요. \n\n읽으신 글의 [중심 주제]는 무엇인가요?');
+            };
+            
+            const handleStanceChoice = (choice) => {
+                addMessage('user', `[${choice}]을(를) 선택했습니다.`);
+                
+                const newReadingData = { ...readingActivityData, stance_1_choice: choice };
+                setReadingActivityData(newReadingData);
+                saveData({ readingActivityData: newReadingData });
+                
+                setReadingStep('stance_2_reason');
+                addMessage('ai', '그렇게 생각하시는 이유를 간단하게 적어주세요.');
+            };
+
+            const handleStartQuiz = () => {
+                setReadingStep('quiz_do');
+                
+                const quizId = selectedArticleId;
+                let currentQuizData;
+                
+                if (quizId === 'custom') {
+                    currentQuizData = dynamicQuizData; // [NEW]
+                } else {
+                    currentQuizData = quizData[quizId]; // 기존
+                }
+
+                if (currentQuizData) {
+                    setQuizAnswers(Array(currentQuizData.length).fill(''));
+                    setShowFeedback(Array(currentQuizData.length).fill(false));
+                    setQuizSubmitted(false);
+                    setAllCorrect(false);
+                } else {
+                    console.error("Quiz data not found for ID:", quizId);
+                    addMessage('ai', '퀴즈 데이터를 불러오는 데 실패했습니다. 메뉴로 돌아가주세요.');
+                    setReadingStep('list');
+                }
+            };
+            
+            // --- 기존 핸들러 (퀴즈, 토론, 글쓰기 등) ---
+            const handleQuizAnswer = (qIndex, answer) => {
+                const newAnswers = [...quizAnswers];
+                newAnswers[qIndex] = answer;
+                setQuizAnswers(newAnswers);
+                if (quizSubmitted) {
+                    setAllCorrect(false);
+                }
+            };
+            
+            const isAnswerCorrect = (question, answer) => {
+                if (answer === null || answer === undefined || answer === '') return false;
+                if (question.type === 'ox' || question.type === 'short') {
+                    // [MODIFIED] 유연한 정답 비교 (공백, 대소문자, 복수정답)
+                    const formattedAnswer = answer.trim().toLowerCase();
+                    const correctAnswers = (question.answer || "").split('|').map(a => a.trim().toLowerCase()); 
+                    return correctAnswers.includes(formattedAnswer);
+                }
+                if (question.type === 'mcq') {
+                    return answer === question.answer;
+                }
+                return false;
+            };
+            
+            // [MODIFIED] '기타 자료' 퀴즈와 호환되도록 수정
+            const handleQuizSubmit = () => {
+                setQuizSubmitted(true);
+                
+                const quizId = selectedArticleId;
+                let currentQuizData;
+                if (quizId === 'custom') {
+                    currentQuizData = dynamicQuizData;
+                } else {
+                    currentQuizData = quizData[quizId];
+                }
+                
+                if (currentQuizData) {
+                    setShowFeedback(Array(currentQuizData.length).fill(true)); // [FIXED]
+
+                    const allAreCorrect = currentQuizData.every((q, i) =>
+                        isAnswerCorrect(q, quizAnswers[i])
+                    );
+                    setAllCorrect(allAreCorrect);
+                } else {
+                    console.error("Quiz data not found for submit:", quizId);
+                }
+            };
+
+            const handleQuizComplete = () => {
+                saveData({ quizResults: { answers: quizAnswers, passed: true } });
+                setReadingStep('quiz_complete');
+                addMessage('ai', '독서 퀴즈까지 모두 완료했습니다! [1단계: 독서활동]을 성공적으로 마쳤습니다.\n\n[활동지 1 다운로드] 버튼을 눌러 결과를 저장할 수 있습니다.\n\n[메뉴로 가기] 버튼을 눌러 허브로 돌아간 후, [2단계: 찬반 토론] 활동을 시작해보세요.');
+            };
+
+            // 공용 핸들러
+            const addMessage = (speaker, text) => {
+                const newMessage = { speaker, text, timestamp: new Date() };
+                setDiscussionHistory(prev => [...prev, newMessage]);
+                if (step === 'reading' || step === 'debate' || step === 'writing') {
+                    saveData({ discussionHistory: [...discussionHistory, newMessage] });
+                }
+            };
+            
+            // 소크라테스식 토론 핸들러
+            const handleDebateFlow = async (userInput) => {
+                addMessage('user', userInput);
+                setCurrentInput('');
+                setIsLoading(true);
+
+                let nextAiMessage = "";
+                let nextDebateStep = debateStep;
+                let socraticPrompt = "";
+
+                switch (debateStep) {
+                    case 'topic':
+                        setDebateTopic(userInput);
+                        nextAiMessage = `토론 주제가 "${userInput}"(으)로 설정되었습니다. 이 주장에 대해 찬성하십니까, 반대하십니까?`;
+                        nextDebateStep = 'vote';
+                        break;
+                    case 'reason1':
+                        socraticPrompt = `당신은 소크라테스식 질문자입니다. 학생의 다음 주장에 대해 [정당성(Legitimacy)]을 검증하는 날카로운 질문을 한 문장으로 던지세요. (예: '그것이 항상 참인가요?', '그 둘이 어떻게 연결되죠?') 학생의 주장: "${userInput}"`;
+                        nextAiMessage = await generateAlFeedback(socraticPrompt);
+                        nextDebateStep = 'reason1_legitimacy';
+                        break;
+                    case 'reason1_legitimacy':
+                        socraticPrompt = `당신은 소크라테스식 질문자입니다. 학생의 다음 답변을 바탕으로, 주장의 [충분성(Sufficiency)]을 검증하는 질문을 던지세요. (예: '그 근거만으로 충분한가요?', '반대 사례는 없나요?') 학생의 답변: "${userInput}"`;
+                        nextAiMessage = await generateAlFeedback(socraticPrompt);
+                        nextDebateStep = 'reason1_sufficiency';
+                        break;
+                    case 'reason1_sufficiency':
+                        socraticPrompt = `당신은 소크라테스식 질문자입니다. 학생의 다음 답변을 바탕으로, 주장의 [현실성(Feasibility)]을 검증하는 질문을 던지세요. (예: '현실적으로 가능한가요?', '현실의 이 문제와 충돌하지 않나요?') 학생의 답변: "${userInput}"`;
+                        nextAiMessage = await generateAlFeedback(socraticPrompt);
+                        nextDebateStep = 'reason1_realism';
+                        break;
+                    case 'reason1_realism':
+                        nextAiMessage = `좋습니다. 첫 번째 근거에 대한 논의가 깊어졌습니다. 이제 주장을 뒷받침할 두 번째 근거를 제시해주세요.`;
+                        nextDebateStep = 'reason2';
+                        break;
+                    case 'reason2':
+                        socraticPrompt = `당신은 소크라테스식 질문자입니다. 학생의 두 번째 주장에 대해 [정당성(Legitimacy)]을 검증하는 날카로운 질문을 한 문장으로 던지세요. 학생의 주장: "${userInput}"`;
+                        nextAiMessage = await generateAlFeedback(socraticPrompt);
+                        nextDebateStep = 'reason2_legitimacy';
+                        break;
+                    case 'reason2_legitimacy':
+                        socraticPrompt = `당신은 소크라테스식 질문자입니다. 학생의 다음 답변을 바탕으로, 두 번째 주장의 [충분성(Sufficiency)]을 검증하는 질문을 던지세요. 학생의 답변: "${userInput}"`;
+                        nextAiMessage = await generateAlFeedback(socraticPrompt);
+                        nextDebateStep = 'reason2_sufficiency';
+                        break;
+                    case 'reason2_sufficiency':
+                        socraticPrompt = `당신은 소크라테스식 질문자입니다. 학생의 다음 답변을 바탕으로, 두 번째 주장의 [현실성(Feasibility)]을 검증하는 질문을 던지세요. 학생의 답변: "${userInput}"`;
+                        nextAiMessage = await generateAlFeedback(socraticPrompt);
+                        nextDebateStep = 'reason2_realism';
+                        break;
+                    case 'reason2_realism':
+                        socraticPrompt = `당신은 토론 진행자입니다. 학생과의 모든 토론 내용을 바탕으로 종합 평가를 내려주세요. [${debateTopic}]에 대한 학생의 논리성, 근거의 깊이, 반박의 질을 칭찬하고 개선점을 포함하여 피드백을 주세요. 학생의 마지막 답변: "${userInput}"`;
+                        nextAiMessage = await generateAlFeedback(socraticPrompt);
+                        nextAiMessage += "\n\n수고하셨습니다! 토론을 모두 마쳤습니다. 토론 과정에서 혹시 생각이 바뀌셨나요?";
+                        nextDebateStep = 'changeVote';
+                        break;
+                    case 'changeReason':
+                        nextAiMessage = `소중한 의견 감사합니다. 이것으로 토론을 모두 마칩니다. \n\n[활동지 2 다운로드] 버튼으로 결과를 저장하고, [토론 완료] 버튼을 눌러 메뉴로 돌아가주세요.`;
+                        nextDebateStep = 'end_debate';
+                        break;
+                    default:
+                        nextAiMessage = "흥미로운 의견입니다. 계속 말씀해주세요.";
+                }
+                
+                setIsLoading(false);
+                addMessage('ai', nextAiMessage);
+                setDebateStep(nextDebateStep);
+            };
+
+            const handleDebateVote = (vote) => {
+                const stance = vote === 'pro' ? '찬성' : '반대';
+                addMessage('user', `제 입장은 [${stance}]입니다.`);
+                addMessage('ai', `[${stance}] 입장을 확인했습니다. 이제 주장을 뒷받침할 첫 번째 근거를 말씀해주세요.`);
+                setDebateStep('reason1');
+            };
+
+            const handleOpinionChangeVote = (didChange) => {
+                const choice = didChange ? '예, 생각이 바뀌었습니다.' : '아니오, 그대로입니다.';
+                addMessage('user', choice);
+                addMessage('ai', '답변 감사합니다. 그렇게 생각하시는 이유를 간단히 말씀해주시겠어요?');
+                setDebateStep('changeReason');
+            };
+            
+            // 점진적 글쓰기 핸들러
+            const handleWritingFlow = async (userInput) => {
+                
+                // 자기 평가 단계 특별 처리
+                const selfEvalStepIndex = selfEvaluationQuestions.findIndex(q => q.id === writingStep);
+                if (selfEvalStepIndex !== -1) {
+                    setAwaitingRevisionChoice(false);
+                    addMessage('user', userInput);
+                    setCurrentInput('');
+                    setIsLoading(true);
+
+                    const currentQuestion = selfEvaluationQuestions[selfEvalStepIndex];
+                    const newEssayContent = { ...essayContent, [currentQuestion.id]: userInput };
+                    setEssayContent(newEssayContent);
+                    saveData({ essayContent: newEssayContent });
+
+                    // 성찰 내용에 대한 피드백
+                    const reflectionPrompt = `학생이 성찰적 자기 평가 항목 "[${currentQuestion.prompt}]"에 대해 "${userInput}"라고 답했습니다. 이 성찰이 구체적이고 진솔한지 짧게 피드백해주세요. (예: "좋은 지적입니다.", "구체적으로 잘 작성해주셨네요.")`;
+                    const aiResponse = await generateAlFeedback(reflectionPrompt);
+                    addMessage('ai', aiResponse);
+                    setIsLoading(false);
+
+                    // 다음 질문으로 이동
+                    if (selfEvalStepIndex < selfEvaluationQuestions.length - 1) {
+                        const nextQuestion = selfEvaluationQuestions[selfEvalStepIndex + 1];
+                        setWritingStep(nextQuestion.id);
+                        addMessage('ai', nextQuestion.prompt);
+                    } else {
+                        // 마지막 질문이었음
+                        setWritingStep('self_eval_completed');
+                        addMessage('ai', "성찰적 자기 평가가 완료되었습니다. [글쓰기 완료] 버튼을 눌러 최종 평가 단계로 이동해주세요.");
+                    }
+                    return; // 자기 평가 로직 종료
+                }
+
+                // --- 기존 글쓰기 단계 처리 ---
+                setAwaitingRevisionChoice(false); 
+                addMessage('user', userInput);
+                setCurrentInput('');
+                setIsLoading(true);
+
+                const currentStep = writingStep;
+                let newEssayContent;
+
+                // [MODIFIED] 제목 후보 배열 처리
+                if (currentStep === 'title_candidates') {
+                    const currentCandidates = essayContent['title_candidates'] || [];
+                    newEssayContent = { 
+                        ...essayContent, 
+                        'title_candidates': [...currentCandidates, userInput] 
+                    };
+                } else {
+                    newEssayContent = { ...essayContent, [currentStep]: userInput };
+                }
+                
+                setEssayContent(newEssayContent);
+                saveData({ essayContent: newEssayContent });
+
+                // [MODIFIED] AI 피드백 스킵 단계
+                const autoProceedSteps = ['title_candidates', 'title_final'];
+                if (autoProceedSteps.includes(currentStep)) {
+                    setIsLoading(false);
+                    const nextStep = getNextWritingStep(currentStep);
+                    let aiMessage = "";
+                    if (currentStep === 'title_candidates') {
+                        const candidatesCount = (newEssayContent['title_candidates'] || []).length;
+                        if (candidatesCount === 1) aiMessage = "두 번째 제목 후보를 입력해주세요.";
+                        else if (candidatesCount === 2) aiMessage = "세 번째 제목 후보를 입력해주세요.";
+                        else aiMessage = getWritingInstructions(nextStep); // 3개 완료, 다음 단계 안내
+                    } else {
+                         aiMessage = getWritingInstructions(nextStep);
+                    }
+                    
+                    addMessage('ai', aiMessage);
+                    setWritingStep(nextStep);
+                    return;
+                }
+                
+                // [MODIFIED] 'title_reason' 단계에서만 AI 피드백
+                let socraticPrompt = "";
+                if (currentStep === 'title_reason') {
+                     socraticPrompt = `당신은 친절한 글쓰기 튜터입니다. 학생이 에세이 제목으로 [${essayContent['title_final']}]을(를) 선택했고, 그 이유는 다음과 같습니다:
+---
+"${userInput}"
+---
+이 제목이 주제를 잘 반영하는지, 그리고 그 이유가 타당한지 평가해주세요.
+
+1.  만약 훌륭하다면: "훌륭합니다!" 또는 "완벽합니다!"와 같이 명확히 칭찬하며 다음 단계로 넘어가도록 안내해주세요.
+2.  만약 개선이 필요하다면: "좋은 시작입니다. 다만..." 또는 "거의 다 왔습니다. 하지만..."과 같이 격려하며, 글을 더 좋게 만들 수 있는 구체적인 수정 제안을 해주세요.`;
+                } else {
+                    socraticPrompt = `당신은 친절한 글쓰기 튜터입니다. 학생이 논증형 에세이의 [${currentStep}] 단계를 위해 다음 글을 제출했습니다:
+---
+"${userInput}"
+---
+이 글이 해당 단계의 기준(예: 서론 도입, 본론 근거 제시 등)에 맞는지 평가해주세요.
+
+1.  만약 훌륭하다면: "훌륭합니다!" 또는 "완벽합니다!"와 같이 명확히 칭찬하며 다음 단계로 넘어가도록 안내해주세요.
+2.  만약 개선이 필요하다면: "좋은 시작입니다. 다만..." 또는 "거의 다 왔습니다. 하지만..."과 같이 격려하며, 글을 더 좋게 만들 수 있는 구체적인 수정 제안을 해주세요.`;
+                }
+
+
+                const aiResponse = await generateAlFeedback(socraticPrompt);
+                addMessage('ai', aiResponse);
+                setIsLoading(false);
+
+                // AI의 응답을 분석하여 다음 단계로 넘어갈지 결정
+                const isGoodEnough = aiResponse.includes("훌륭합니다") || 
+                                     aiResponse.includes("완벽합니다") || 
+                                     aiResponse.includes("좋습니다!");
+
+                if (isGoodEnough) {
+                    const nextStep = getNextWritingStep(writingStep);
+
+                    if (nextStep === 'essay_complete') {
+                        addMessage('ai', "정말 대단합니다! 멋진 논증형 에세이가 완성되었습니다. [완성된 에세이 보기] 버튼을 눌러 전체 글을 확인해주세요.");
+                        setWritingStep('essay_complete');
+                    } else {
+                        const nextInstruction = getWritingInstructions(nextStep);
+                        addMessage('ai', nextInstruction);
+                        setWritingStep(nextStep);
+                    }
+                } else if (!isGoodEnough) {
+                    setAwaitingRevisionChoice(true);
+                }
+            };
+
+            // 수정 제안에 대한 사용자 선택 핸들러
+            const handleRevisionChoice = (choice) => {
+                setAwaitingRevisionChoice(false); 
+                
+                if (choice === 'yes') {
+                    addMessage('user', '예, 수정할께요');
+                    // [MODIFIED] 제목 수정 시 'title_final' 단계로 복귀
+                    if(writingStep === 'title_reason') {
+                        setWritingStep('title_final');
+                        addMessage('ai', '좋습니다. [최종 제목]을 다시 입력해주세요.');
+                    } else {
+                        addMessage('ai', '좋습니다. 수정된 내용을 다시 입력해주세요.');
+                    }
+                } else { // choice === 'no'
+                    addMessage('user', '아니오, 제 방식대로');
+                    addMessage('ai', '알겠습니다. 당신의 선택을 존중합니다. 다음 단계로 넘어가겠습니다.');
+                    
+                    const nextStep = getNextWritingStep(writingStep);
+
+                    if (nextStep === 'essay_complete') {
+                        addMessage('ai', "정말 대단합니다! 멋진 논증형 에세이가 완성되었습니다. [완성된 에세이 보기] 버튼을 눌러 전체 글을 확인해주세요.");
+                        setWritingStep('essay_complete');
+                    } else {
+                        const nextInstruction = getWritingInstructions(nextStep);
+                        addMessage('ai', nextInstruction);
+                        setWritingStep(nextStep);
+                    }
+                }
+            };
+
+            // 문장 구조 보기 핸들러
+            const handleShowStructure = (type) => {
+                if (structureMessages[type]) {
+                    addMessage('ai', structureMessages[type]);
+                    addMessage('ai', "문장 구조를 이해하셨나요?");
+                    setAwaitingStructureConfirmation({ show: true, type: type });
+                }
+            };
+            
+            // 문장 구조 확인 핸들러
+            const handleStructureConfirmation = (didUnderstand) => {
+                const type = awaitingStructureConfirmation.type;
+                setAwaitingStructureConfirmation({ show: false, type: null });
+
+                if (didUnderstand) {
+                    addMessage('user', '예, 이해했습니다.');
+                    
+                    // 다음 글쓰기 단계(실제 입력 단계)로 이동
+                    let nextStep;
+                    if (type === 'intro') nextStep = 'intro_hook';
+                    else if (type === 'body') nextStep = 'body1_topic';
+                    else if (type === 'conclusion') nextStep = 'conclusion_summary';
+                    
+                    if (nextStep) {
+                        setWritingStep(nextStep);
+                        addMessage('ai', getWritingInstructions(nextStep));
+                    }
+                } else {
+                    addMessage('user', '아니오, 다시 설명해주세요.');
+                    addMessage('ai', structureMessages[type]); // 구조 다시 보여주기
+                    addMessage('ai', "문장 구조를 이해하셨나요?");
+                    setAwaitingStructureConfirmation({ show: true, type: type }); // 다시 묻기
+                }
+            };
+
+
+            // 완성된 에세이를 취합하고 표시하는 핸들러
+            const compileEssay = () => {
+                // Helper function to safely get content, returns empty string if undefined
+                const get = (key) => essayContent[key] || '';
+        
+                // Build the essay string
+                let text = `## ${get('title_final')}\n\n`; // [MODIFIED]
+        
+                // 서론
+                text += `**[서론]**\n`;
+                text += `${get('intro_hook')} ${get('intro_context')} ${get('intro_stance')}\n\n`;
+        
+                // 본론 1
+                text += `**[본론 1]**\n`;
+                text += `${get('body1_topic')} ${get('body1_evidence')} ${get('body1_example')} ${get('body1_analysis')}\n\n`;
+        
+                // 본론 2 (간략화된 버전이므로 topic만)
+                if (get('body2_topic')) {
+                    text += `**[본론 2]**\n`;
+                    text += `${get('body2_topic')}\n\n`;
+                }
+        
+                // 본론 3 (반박)
+                if (get('body3_counter') || get('body3_rebuttal')) {
+                    text += `**[본론 3 - 반박]**\n`;
+                    text += `${get('body3_counter')} ${get('body3_rebuttal')}\n\n`;
+                }
+                
+                // 결론
+                text += `**[결론]**\n`;
+                text += `${get('conclusion_summary')} ${get('conclusion_outlook')}\n\n`;
+        
+                return text;
+            };
+        
+            const handleShowFullEssay = () => {
+                const fullEssay = compileEssay();
+                addMessage('ai', `--- [완성된 에세이] ---\n\n${fullEssay}\n--- [에세이 끝] ---`); // Show the full essay in the chat
+        
+                // Now move to self-check
+                const selfCheckInstruction = getWritingInstructions('self_check_start');
+                addMessage('ai', selfCheckInstruction);
+                setWritingStep('self_check_start');
+                setChecklistProgress({ categoryIndex: 0, questionIndex: 0 }); // [MODIFIED] 체크리스트 상태 리셋
+                setChecklistAnswers({}); // [MODIFIED] 체크리스트 답변 리셋
+            };
+            
+            // 자기 점검 체크리스트 핸들러
+            const handleChecklistAnswer = async (answer) => {
+                const { categoryIndex, questionIndex } = checklistProgress;
+                
+                // 1. Save the answer
+                const newAnswers = {
+                    ...checklistAnswers,
+                    [`${categoryIndex}-${questionIndex}`]: answer
+                };
+                setChecklistAnswers(newAnswers);
+
+                // 2. Calculate next progress
+                const currentCategory = selfChecklistItems[categoryIndex];
+                let nextCategoryIndex = categoryIndex;
+                let nextQuestionIndex = questionIndex;
+
+                if (questionIndex < currentCategory.questions.length - 1) {
+                    // Next question in the same category
+                    nextQuestionIndex++;
+                } else if (categoryIndex < selfChecklistItems.length - 1) {
+                    // Next category
+                    nextCategoryIndex++;
+                    nextQuestionIndex = 0;
+                } else {
+                    // Checklist is complete
+                    await provideChecklistFeedback(newAnswers); 
+                    return; // Don't update progress, let feedback function handle it
+                }
+
+                // 3. Update progress state
+                setChecklistProgress({
+                    categoryIndex: nextCategoryIndex,
+                    questionIndex: nextQuestionIndex
+                });
+            };
+
+            // 체크리스트 완료 후 피드백 제공 (AI 호출 포함)
+            const provideChecklistFeedback = async (finalAnswers) => {
+                const totalQuestions = selfChecklistItems.reduce((acc, cat) => acc + cat.questions.length, 0); // 20
+                let yesCount = 0;
+                let noItems = []; // 'No'라고 답한 질문 텍스트
+                
+                // selfChecklistItems를 순회하며 'No' 항목 찾기
+                selfChecklistItems.forEach((category, cIndex) => {
+                    category.questions.forEach((question, qIndex) => {
+                        const answer = finalAnswers[`${cIndex}-${qIndex}`];
+                        if (answer === 'Yes') {
+                            yesCount++;
+                        } else if (answer === 'No') {
+                            noItems.push(question); // 질문 텍스트 저장
+                        }
+                    });
+                });
+                
+                const noCount = totalQuestions - yesCount;
+
+                // 1. Yes/No 개수 요약 메시지
+                addMessage('ai', `【체크리스트 점검 결과】\n총 ${totalQuestions}개 항목 중 'Yes'가 ${yesCount}개, 'No'가 ${noCount}개 입니다.`);
+
+                // 2. 'No' 항목에 대한 AI 피드백 생성
+                if (noItems.length > 0) {
+                    setIsLoading(true);
+                    const feedbackPrompt = `당신은 AI 글쓰기 튜터입니다. 학생이 에세이 자가 점검에서 다음 항목들에 'No'라고 답했습니다. 각 항목에 대해 수정을 위한 구체적이고 실행 가능한 조언을 한 문장으로 제공해주세요. 다음은 학생이 'No'라고 답한 항목들입니다:
+${noItems.map(item => `- ${item}`).join('\n')}
+
+【'No' 항목 개선 피드백】`;
+
+                    const aiFeedback = await generateAlFeedback(feedbackPrompt);
+                    setIsLoading(false);
+                    addMessage('ai', aiFeedback);
+                } else {
+                    addMessage('ai', "모든 항목을 'Yes'로 답하셨네요. 훌륭합니다!");
+                }
+                
+                // 3. 자기 평가 단계로 이동
+                setWritingStep('self_eval_1_good');
+                addMessage('ai', selfEvaluationQuestions[0].prompt);
+            };
+
+            
+            // --- [NEW] 활동지 다운로드 핸들러 ---
+            
+            const handleDownloadReadingActivity = () => {
+                const get = (key) => readingActivityData[key] || '(입력 없음)';
+                const article = readingActivityData.selectedArticle || { title: '(알 수 없음)' };
+                // [MODIFIED] 학번 문자열 생성
+                const studentIdString = `${userInfo.grade}${userInfo.classNum.padStart(2, '0')}${userInfo.studentNum.padStart(2, '0')}`;
+
+                let content = `AI 독서-토론-글쓰기 챗봇: 활동지 1 - 읽기 자료 요약·분석·비교\n`;
+                content += `=========================================================\n`;
+                content += `학년: ${userInfo.grade}\n`;
+                content += `반: ${userInfo.classNum}\n`;
+                content += `번호: ${userInfo.studentNum}\n`;
+                content += `이름: ${userInfo.name}\n`;
+                content += `선택한 주제: ${article.title || get('custom_material_title')}\n`;
+                content += `URL: ${article.url || get('custom_material_url')}\n`;
+                content += `\n■ 1단계: 읽기 전 활동\n`;
+                content += `1. 이 주제를 선택한 이유는 무엇인가요?\n   -> ${get('pre_1_reason')}\n`;
+                content += `2. 이 주제에 대해 이미 알고 있는 것은 무엇인가요?\n   -> ${get('pre_2_knowledge')}\n`;
+                content += `3. 이 글을 읽으며 알고 싶은 것은 무엇인가요?\n   -> ${get('pre_3_goal')}\n`;
+                content += `\n■ 2단계: 읽기 중 활동\n`;
+                content += `【핵심 내용 메모】\n`;
+                content += `- 중심 주제: ${get('during_1_topic')}\n`;
+                content += `【주요 용어】\n`;
+                content += `  1. ${get('during_2_term1')}\n`;
+                content += `  2. ${get('during_3_term2')}\n`;
+                content += `  3. ${get('during_4_term3')}\n`;
+                content += `【찬성 의견】\n`;
+                content += `  1. ${get('during_5_pro1')}\n`;
+                content += `  2. ${get('during_6_pro2')}\n`;
+                content += `【반대 의견】\n`;
+                content += `  1. ${get('during_7_con1')}\n`;
+                content += `  2. ${get('during_8_con2')}\n`;
+                content += `- 이해가 어려운 부분: ${get('during_9_difficulty')}\n`;
+                content += `- 인상 깊은 문장이나 통계: ${get('during_10_impression')}\n`;
+                content += `\n■ 3단계: 읽기 후 활동\n`;
+                content += `【나의 요약】\n${get('post_1_my_summary')}\n`;
+                content += `\n【AI 요약】\n${get('post_2_ai_summary')}\n`;
+                content += `\n【차이점 및 개선점 (학생 분석)】\n${get('post_2b_self_comparison')}\n`;
+                content += `\n【개선된 요약】\n${get('post_3_improved_summary')}\n`;
+                content += `\n■ 4단계: 나의 입장 정리\n`;
+                content += `- 주제에 대한 나의 입장: ${get('stance_1_choice')}\n`;
+                content += `  - 이유: ${get('stance_2_reason')}\n`;
+                content += `- 예상 토론 주제: ${get('stance_3_topic')}\n`;
+                
+                // [MODIFIED] 파일명 변경
+                downloadAsFile(`활동지1_독서활동_${studentIdString}_${userInfo.name}.txt`, content);
+            };
+
+            const handleDownloadDebate = () => {
+                // [MODIFIED] 학번 문자열 생성
+                const studentIdString = `${userInfo.grade}${userInfo.classNum.padStart(2, '0')}${userInfo.studentNum.padStart(2, '0')}`;
+                
+                let content = `AI 독서-토론-글쓰기 챗봇: 활동지 2 - 찬반 토론\n`;
+                content += `=========================================================\n`;
+                content += `학년: ${userInfo.grade}\n`;
+                content += `반: ${userInfo.classNum}\n`;
+                content += `번호: ${userInfo.studentNum}\n`;
+                content += `이름: ${userInfo.name}\n`;
+                content += `\n■ 토론 준비\n`;
+                content += `토론 주제(핵심 질문): ${debateTopic}\n`;
+                
+                content += `\n■ 토론 전체 대화록\n\n`;
+                discussionHistory.forEach(msg => {
+                    const prefix = msg.speaker === 'ai' ? 'AI 튜터:' : `${userInfo.name}:`;
+                    content += `${prefix}\n${msg.text}\n\n`;
+                });
+                
+                // [MODIFIED] 파일명 변경
+                downloadAsFile(`활동지2_찬반토론_${studentIdString}_${userInfo.name}.txt`, content);
+            };
+
+            const handleDownloadWriting = () => {
+                const get = (key) => essayContent[key] || '(입력 없음)';
+                // [MODIFIED] 학번 문자열 생성
+                const studentIdString = `${userInfo.grade}${userInfo.classNum.padStart(2, '0')}${userInfo.studentNum.padStart(2, '0')}`;
+                
+                let content = `AI 독서-토론-글쓰기 챗봇: 활동지 3 & 4 - 글쓰기 및 자기 평가\n`;
+                content += `=============================================================\n`;
+                content += `학년: ${userInfo.grade}\n`;
+                content += `반: ${userInfo.classNum}\n`;
+                content += `번호: ${userInfo.studentNum}\n`;
+                content += `이름: ${userInfo.name}\n`;
+                content += `\n--- 활동지 3: 논증형 에세이 쓰기 ---\n\n`;
+                
+                // [MODIFIED] 제목 서식
+                content += `■ 제목 정하기\n`;
+                const candidates = essayContent['title_candidates'] || [];
+                content += `【제목 후보 1】: ${candidates[0] || '(입력 없음)'}\n`;
+                content += `【제목 후보 2】: ${candidates[1] || '(입력 없음)'}\n`;
+                content += `【제목 후보 3】: ${candidates[2] || '(입력 없음)'}\n`;
+                content += `【최종 선택 제목】: ${get('title_final')}\n`;
+                content += `【선택 이유】: ${get('title_reason')}\n\n`;
+                
+                content += `■ 서론 구성\n`;
+                content += `【도입부】\n${get('intro_hook')}\n`;
+                content += `【문제 상황】\n${get('intro_context')}\n`;
+                content += `【주장 제시】\n${get('intro_stance')}\n\n`;
+                
+                content += `■ 본론 1 구성\n`;
+                content += `【주제문】\n${get('body1_topic')}\n`;
+                content += `【근거 설명】\n${get('body1_evidence')}\n`;
+                content += `【구체적 사례】\n${get('body1_example')}\n`;
+                content += `【분석 및 연결】\n${get('body1_analysis')}\n\n`;
+                
+                content += `■ 본론 2 구성\n`;
+                content += `【주제문】\n${get('body2_topic')}\n\n`;
+                
+                content += `■ 본론 3 구성(반박)\n`;
+                content += `【반대 의견 제시】\n${get('body3_counter')}\n`;
+                content += `【재반박】\n${get('body3_rebuttal')}\n\n`;
+
+                content += `■ 결론 구성\n`;
+                content += `【요약】\n${get('conclusion_summary')}\n`;
+                content += `【입장 재확인 및 제언】\n${get('conclusion_outlook')}\n`;
+                
+                content += `\n\n--- 활동지 4: 자기 점검 및 평가 ---\n\n`;
+                content += `■ 자기 점검 체크리스트\n\n`;
+                
+                let yesCount = 0;
+                let noCount = 0;
+                let noItemsFeedback = "";
+                
+                selfChecklistItems.forEach((category, cIndex) => {
+                    content += `${category.category}\n`;
+                    category.questions.forEach((question, qIndex) => {
+                        const answer = checklistAnswers[`${cIndex}-${qIndex}`] || 'No'; // Default to No if unset
+                        content += `  ☐ ${question} [${answer}]\n`;
+                        if (answer === 'Yes') yesCount++;
+                        else {
+                            noCount++;
+                            noItemsFeedback += `  - ${question}\n`; // 'No' 항목 저장
+                        }
+                    });
+                    content += `\n`;
+                });
+                
+                content += `■ 체크 결과 요약\n`;
+                content += `- 총 점검 항목: ${yesCount + noCount}\n`;
+                content += `- Yes 개수: ${yesCount}\n`;
+                content += `- No 개수: ${noCount}\n`;
+                content += `\n【'No' 항목 개선 계획 (AI 피드백)】\n`;
+                // 마지막 피드백 메시지 찾기 (AI의 개선 조언)
+                const feedbackMsg = discussionHistory.slice().reverse().find(msg => 
+                    msg.speaker === 'ai' && msg.text.includes("【'No' 항목 개선 피드백】")
+                );
+                content += feedbackMsg ? feedbackMsg.text.replace("【'No' 항목 개선 피드백】", "") : "(AI 피드백 로드 실패 - 채팅 내역 참조)\n";
+                
+                content += `\n■ 성찰적 자기 평가\n`;
+                content += `【잘된 점】\n${get('self_eval_1_good')}\n\n`;
+                content += `【아쉬운 점】\n${get('self_eval_2_lacking')}\n\n`;
+                content += `【어려웠던 점】\n${get('self_eval_3_difficult')}\n\n`;
+                content += `【배운 점】\n${get('self_eval_4_learned')}\n\n`;
+                content += `【다음에 개선하고 싶은 점】\n${get('self_eval_5_improve')}\n`;
+                
+                // [MODIFIED] 파일명 변경
+                downloadAsFile(`활동지3_4_글쓰기평가_${studentIdString}_${userInfo.name}.txt`, content);
+            };
+
+            // --- 기타 핸들러 ---
+            const handleFinalStepFlow = (step) => {
+                setFinalStepProgress(step);
+                if (step === 'reflection_submitted') {
+                    // 'reflection' 상태는 이제 사용되지 않음 (essayContent에 저장됨)
+                    saveData({ reflection: reflection }); // [MODIFIED] 기존 소감문 저장 유지
+                }
+            };
+
+            const restartChat = () => {
+                setStep('info');
+                // [MODIFIED] userInfo 리셋
+                setUserInfo({ grade: '', classNum: '', studentNum: '', name: '' });
+                
+                // 독서 활동 리셋
+                setReadingStep('list');
+                setReadingActivityData({});
+                setDynamicQuizData(null);
+                setSelectedArticleId(null);
+                setQuizAnswers([]);
+                setShowFeedback([]);
+                setQuizSubmitted(false);
+                setAllCorrect(false);
+
+                // 토론 리셋
+                setDebateStep('topic'); 
+                
+                // 글쓰기 리셋
+                setWritingStep('title_candidates'); // [MODIFIED]
+                setEssayContent({});
+                setChecklistAnswers({});
+                setChecklistProgress({ categoryIndex: 0, questionIndex: 0 });
+                setAwaitingRevisionChoice(false); 
+                setAwaitingStructureConfirmation({ show: false, type: null }); 
+                
+                // 공통 리셋
+                setDiscussionHistory([]);
+                setFinalStepProgress('start');
+                setReflection('');
+                setSessionId(`${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+            };
+            
+            // --- 독립 실행 핸들러 ---
+            const startReading = () => {
+                setStep('reading');
+                setReadingStep('list');
+                setDiscussionHistory([]); // 독서 활동 시작 시 채팅 내역 초기화
+                setReadingActivityData({}); // 독서 활동 데이터 초기화
+            };
+
+            const startDebate = () => {
+                setStep('debate');
+                setDebateStep('topic'); 
+                setDiscussionHistory([{
+                    speaker: 'ai',
+                    text: '찬반 토론을 시작하겠습니다.\n\n토론하고 싶은 주제(핵심 질문)를 입력해주세요.\n(예: NFT 미술은 진정한 예술로 인정받을 수 있는가?)'
+                }]);
+            };
+
+            const startWritingFlow = () => {
+                const firstInstruction = getWritingInstructions('title_candidates'); // [MODIFIED]
+                setStep('writing');
+                setWritingStep('title_candidates'); // [MODIFIED]
+                setDiscussionHistory([{
+                    speaker: 'ai',
+                    text: firstInstruction
+                }]);
+                setEssayContent({}); // 글쓰기 내용 초기화
+            };
+
+
+            // --- 5. 렌더링 함수들 ---
+            
+            // 렌더링: 1단계 (정보 입력) [MODIFIED]
+            const renderStep1 = () => (
+                <div className="p-6 bg-white rounded-xl shadow-lg animate-fade-in">
+                    <div className="text-center mb-6">
+                        <h2 className="text-2xl font-bold mb-2 text-gray-800">AI 독서-토론-글쓰기 챗봇</h2>
+                        <p className="text-gray-600 text-sm mb-4">
+                        이 프로그램은 여러분의 독서, 토론 및 논증형 글쓰기 능력을 향상시키기 위해 만들어졌습니다. 
+                        AI 튜터와 함께 체계적인 단계를 거치며 비판적 사고력과 창의적 표현력을 길러보세요.
+                        </p>
+                        <p className="text-xs text-gray-500">프로그램 개발자: 박해원</p>
+                    </div>
+                    <form onSubmit={handleUserInfoSubmit} className="space-y-4 border-t pt-6">
+                        <p className="text-center text-sm font-semibold text-gray-700">먼저 여러분의 정보를 알려주세요.</p>
+                        
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">학년</label>
+                                <input 
+                                    type="number" 
+                                    placeholder="예: 1" 
+                                    value={userInfo.grade} 
+                                    onChange={(e) => setUserInfo({...userInfo, grade: e.target.value})} 
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"
+                                    required
+                                    min="1"
+                                    max="3"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">반</label>
+                                <input 
+                                    type="number" 
+                                    placeholder="예: 5" 
+                                    value={userInfo.classNum} 
+                                    onChange={(e) => setUserInfo({...userInfo, classNum: e.target.value})} 
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition"
+                                    required
+                                    min="1"
+                                    max="10"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">번호</label>
+                                <input 
+                                    type="number" 
+                                    placeholder="예: 1" 
+                                    value={userInfo.studentNum} 
+                                    onChange={(e) => setUserInfo({...userInfo, studentNum: e.target.value})} 
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition" 
+                                    required 
+                                    min="1"
+                                    max="99"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">성명</label>
+                            <input 
+                                type="text" 
+                                placeholder="예: 홍길동" 
+                                value={userInfo.name} 
+                                onChange={(e) => setUserInfo({...userInfo, name: e.target.value})} 
+                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition" 
+                                required 
+                            />
+                        </div>
+                        <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-transform transform hover:scale-105">학습 시작하기</button>
+                    </form>
+                </div>
+            );
+
+            // 렌더링: 허브 (단계 선택)
+            const renderHub = () => (
+                <div className="p-6 bg-white rounded-xl shadow-lg animate-fade-in">
+                    <h2 className="text-2xl font-bold mb-2 text-gray-800">{userInfo.name}님, 환영합니다!</h2>
+                    <p className="text-gray-600 mb-6">수행하고 싶은 활동을 선택해주세요. 각 단계는 독립적으로 수행할 수 있습니다.</p>
+                    <div className="space-y-4">
+                        <button onClick={startReading} className="w-full bg-blue-600 text-white font-bold py-4 px-4 rounded-lg hover:bg-blue-700 transition-transform transform hover:scale-105">
+                        [1단계: 독서활동]
+                        </button>
+                        <button onClick={startDebate} className="w-full bg-green-600 text-white font-bold py-4 px-4 rounded-lg hover:bg-green-700 transition-transform transform hover:scale-105">
+                        [2단계: 찬반토론]
+                        </button>
+                        <button onClick={startWritingFlow} className="w-full bg-indigo-600 text-white font-bold py-4 px-4 rounded-lg hover:bg-indigo-700 transition-transform transform hover:scale-105">
+                        [3단계: 논증형 글쓰기]
+                        </button>
+                    </div>
+                    <button onClick={restartChat} className="w-full text-sm text-gray-500 hover:text-gray-700 mt-6">처음으로 (정보 다시 입력)</button>
+                </div>
+            );
+
+            // --- 1단계: 독서활동 렌더링 함수들 ---
+
+            // 독서 활동 메인 렌더러
+            const renderReadingActivity = () => {
+                switch (readingStep) {
+                    case 'list':
+                        return renderReadingList();
+                    case 'quiz_do':
+                        return renderReadingQuiz();
+                    default:
+                        // pre_..., during_..., post_..., stance_..., quiz_start, quiz_complete, custom_...
+                        return renderReadingChatView();
+                }
+            };
+            
+            // 독서 자료 목록 렌더러
+            const renderReadingList = () => (
+                <div className="p-6 bg-white rounded-xl shadow-lg animate-fade-in">
+                    <button onClick={() => setStep('hub')} className="text-sm text-blue-500 hover:underline mb-4">&larr; 메뉴로 돌아가기</button>
+                    <h2 className="text-2xl font-bold mb-2 text-gray-800">미술 독서 자료</h2>
+                    <p className="text-gray-600 mb-6">아래 미술 관련 읽기 자료 목록에서 관심 있는 주제를 선택하여 읽어보세요.</p>
+                    <div className="space-y-3">
+                        {readingMaterials.map(material => (
+                            <button 
+                                key={material.id} 
+                                onClick={() => handleSelectReadingArticle(material)} 
+                                className="w-full text-left p-4 border border-gray-200 rounded-lg hover:bg-blue-50 transition"
+                            >
+                                <h3 className="font-bold text-blue-600">{`0${material.id}. ${material.title}`}</h3>
+                                <p className="text-sm text-gray-500 mt-1">{material.summary}</p>
+                            </button>
+                        ))}
+                    </div>
+                    {/* 기타 자료 버튼 */}
+                    <button 
+                        onClick={handleStartCustomArticle} 
+                        className="w-full text-left p-4 border border-gray-300 border-dashed rounded-lg hover:bg-gray-100 transition mt-4"
+                    >
+                        <h3 className="font-bold text-gray-700">[기타 자료 직접 입력하기]</h3>
+                        <p className="text-sm text-gray-500 mt-1">가지고 계신 자료의 제목과 URL을 입력하여 활동을 진행합니다.</p>
+                    </button>
+                </div>
+            );
+
+            // 독서 활동 (퀴즈) 렌더러
+            const renderReadingQuiz = () => {
+                // [MODIFIED] 퀴즈 데이터 소스 분기
+                const quizId = selectedArticleId;
+                let currentQuiz;
+                if (quizId === 'custom') {
+                    currentQuiz = dynamicQuizData;
+                } else {
+                    currentQuiz = quizData[quizId];
+                }
+
+                if (!currentQuiz) {
+                    return (
+                        <div className="p-6 bg-white rounded-xl shadow-lg animate-fade-in">
+                            <p>퀴즈를 불러오는 중 오류가 발생했습니다. 메뉴로 돌아가 다시 시도해주세요.</p>
+                            <button onClick={() => setStep('hub')} className="w-full mt-4 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">
+                                메뉴로 가기
+                            </button>
+                        </div>
+                    );
+                }
+                
+                return (
+                    <div className="p-6 bg-white rounded-xl shadow-lg animate-fade-in">
+                        {/* 퀴즈 중에는 메뉴로 돌아갈 수 없음 (혹은 원하면 추가) */}
+                        <h2 className="text-2xl font-bold mb-4 text-gray-800">독서 확인 퀴즈</h2>
+                        <p className="text-gray-600 mb-6">읽으신 내용을 잘 이해했는지 확인해볼까요? 퀴즈를 풀어보세요.</p>
+                        <div className="space-y-6">
+                        {currentQuiz.map((q, i) => {
+                            const correct = showFeedback[i] && isAnswerCorrect(q, quizAnswers[i]);
+                            return (
+                            <div key={i} className={`p-4 rounded-lg border transition-all ${showFeedback[i] ? (correct ? 'border-green-400 bg-green-50' : 'border-red-400 bg-red-50') : 'border-gray-200'}`}>
+                                <p className="font-semibold text-gray-800 mb-3">{`Q${i+1}. ${q.question}`}</p>
+                                {q.type === 'ox' && (
+                                <div className="flex space-x-4">
+                                    <button onClick={() => handleQuizAnswer(i, 'o')} 
+                                    disabled={showFeedback[i] && correct} className={`px-4 py-2 rounded-lg border transition ${quizAnswers[i] === 'o' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white'} disabled:opacity-50 disabled:cursor-not-allowed`}>O</button>
+                                    <button onClick={() => handleQuizAnswer(i, 'x')} 
+                                    disabled={showFeedback[i] && correct} className={`px-4 py-2 rounded-lg border transition ${quizAnswers[i] === 'x' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white'} disabled:opacity-50 disabled:cursor-not-allowed`}>X</button>
+                                </div>
+                                )}
+                                {q.type === 'mcq' && (
+                                <div className="space-y-2">
+                                    {q.options.map(opt => (
+                                    <button key={opt} onClick={() => handleQuizAnswer(i, opt)} 
+                                    disabled={showFeedback[i] && correct} className={`block w-full text-left p-3 rounded-lg border transition ${quizAnswers[i] === opt ? 'bg-blue-500 text-white border-blue-500' : 'bg-white'} disabled:opacity-50 disabled:cursor-not-allowed`}>{opt}</button>
+                                    ))}
+                                </div>
+                                )}
+                                {q.type === 'short' && (
+                                <input type="text" value={quizAnswers[i] || ''} onChange={(e) => handleQuizAnswer(i, e.target.value)} 
+                                disabled={showFeedback[i] && correct} 
+                                className="w-full p-3 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" />
+                                )}
+                                {showFeedback[i] && (
+                                <div className="mt-3 p-3 rounded-lg bg-gray-100 text-sm">
+                                    <p><strong>정답:</strong> {q.answer}</p>
+                                    <p><strong>해설:</strong> {q.explanation}</p>
+                                </div>
+                                )}
+                            </div>
+                            )
+                        })}
+                        </div>
+                        <div className="w-full mt-6 space-y-3">
+                        {!allCorrect &&
+                        <button onClick={handleQuizSubmit} className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">
+                            {quizSubmitted ? '다시 채점하기' : '제출하고 결과 확인하기'}
+                        </button>
+                        }
+                        {quizSubmitted && !allCorrect &&
+                        <p className="text-center text-red-600 text-sm font-semibold">틀린 문제가 있습니다. 수정 후 '다시 채점하기'를 눌러주세요.</p>
+                        }
+                        {allCorrect &&
+                        <div className="text-center p-4 bg-green-100 border-t-4 border-green-500 rounded-b-lg shadow">
+                            <p className="font-bold text-lg text-green-800">정답입니다! 모든 문제를 맞히셨습니다.</p>
+                            {/* [MODIFIED] 퀴즈 완료 버튼 */}
+                            <button 
+                                onClick={handleQuizComplete} 
+                                className="w-full mt-4 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-transform transform hover:scale-105">
+                                독서 퀴즈 완료
+                            </button>
+                        </div>
+                        }
+                        </div>
+                    </div>
+                );
+            };
+
+            // 독서 활동 (채팅) 렌더러
+            const renderReadingChatView = () => {
+                const showTextInput = [
+                    'custom_material_title', 'custom_material_url', // [NEW]
+                    'pre_1_reason', 'pre_2_knowledge', 'pre_3_goal',
+                    'during_1_topic', 'during_2_term1', 'during_3_term2', 'during_4_term3',
+                    'during_5_pro1', 'during_6_pro2', 'during_7_con1', 'during_8_con2',
+                    'during_9_difficulty', 'during_10_impression',
+                    'post_1_my_summary', 'post_2_ai_summary', 'post_2b_self_comparison', 'post_3_improved_summary', // [MODIFIED]
+                    'stance_2_reason', 'stance_3_topic'
+                ].includes(readingStep);
+                
+                const showDuringStartButtons = readingStep === 'during_0_link';
+                const showStanceButtons = readingStep === 'stance_1_choice';
+                const showQuizStartButton = readingStep === 'quiz_start';
+                const showGoToHubButton = readingStep === 'quiz_complete';
+                
+                const articleUrl = readingActivityData.selectedArticle?.url || '#';
+
+                return (
+                    <div className="flex flex-col h-full bg-white rounded-xl shadow-lg animate-fade-in">
+                        <div className="p-4 border-b">
+                            <button onClick={() => setStep('hub')} className="text-sm text-blue-500 hover:underline mb-2">&larr; 메뉴로 돌아가기</button>
+                            <h2 className="text-xl font-bold text-gray-800">[1단계: 독서활동]</h2>
+                            <p className="text-sm text-gray-500">{readingActivityData.selectedArticle?.title || '기타 자료'}</p>
+                        </div>
+                        {/* 채팅창 */}
+                        <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+                            <div className="space-y-4">
+                            {discussionHistory.map((msg, index) => (
+                                <div key={index} className={`flex items-end gap-2 ${msg.speaker === 'ai' ? 'justify-start' : 'justify-end'}`}>
+                                    {msg.speaker === 'ai' && <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-sm shrink-0">AI</div>}
+                                    <div className={`max-w-full p-3 rounded-2xl whitespace-pre-wrap ${msg.speaker === 'ai' ? 'bg-gray-200 text-gray-800 rounded-bl-none' : 'bg-blue-600 text-white rounded-br-none'}`}>
+                                        <p className="text-sm" dangerouslySetInnerHTML={{ __html: msg.text.replace(/\n/g, '<br />') }} />
+                                    </div>
+                                </div>
+                            ))}
+                            {isLoading && <div className="flex justify-start"><div className="p-3 rounded-2xl bg-gray-200 text-gray-500">피드백 생성 중...</div></div>}
+                            <div ref={chatEndRef} />
+                            </div>
+                        </div>
+                        {/* 입력창 및 버튼 */}
+                        <div className="p-4 border-t bg-white">
+                            {showTextInput && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleReadingFlow(currentInput); }} className="flex gap-2">
+                                <input value={currentInput} onChange={(e) => setCurrentInput(e.target.value)} type="text" placeholder="내용을 입력하세요..." className="flex-1 p-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 transition" autoComplete="off" disabled={isLoading} />
+                                <button type="submit" className="bg-blue-600 text-white font-bold py-3 px-5 rounded-full hover:bg-blue-700 transition-transform transform hover:scale-105" disabled={isLoading}>전송</button>
+                                </form>
+                            )}
+                            
+                            {showDuringStartButtons && !isLoading && (
+                                <div className="flex flex-col sm:flex-row gap-2">
+                                    <a href={articleUrl} target="_blank" rel="noopener noreferrer" 
+                                       className={`flex-1 text-center bg-gray-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-600 transition ${articleUrl === '#' || articleUrl === '' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                       aria-disabled={articleUrl === '#' || articleUrl === ''}
+                                       onClick={(e) => (articleUrl === '#' || articleUrl === '') && e.preventDefault()}
+                                    >
+                                        [읽기 자료 보기]
+                                    </a>
+                                    <button onClick={handleStartDuringActivity} className="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">
+                                        [읽기 중 활동 시작]
+                                    </button>
+                                </div>
+                            )}
+
+                            {showStanceButtons && !isLoading && (
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={() => handleStanceChoice('찬성')} className="bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition">찬성</button>
+                                    <button onClick={() => handleStanceChoice('반대')} className="bg-red-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-600 transition">반대</button>
+                                    <button onClick={() => handleStanceChoice('조건부 찬성')} className="bg-green-200 text-green-800 font-bold py-3 px-4 rounded-lg hover:bg-green-300 transition">조건부 찬성</button>
+                                    <button onClick={() => handleStanceChoice('조건부 반대')} className="bg-red-200 text-red-800 font-bold py-3 px-4 rounded-lg hover:bg-red-300 transition">조건부 반대</button>
+                                </div>
+                            )}
+
+                            {showQuizStartButton && !isLoading && (
+                                <button onClick={handleStartQuiz} className="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 transition">
+                                    [독서 퀴즈]
+                                </button>
+                            )}
+
+                            {showGoToHubButton && !isLoading && (
+                                <div className="flex flex-col sm:flex-row gap-2">
+                                    <button onClick={handleDownloadReadingActivity} className="flex-1 bg-gray-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition">
+                                        [활동지 1 다운로드]
+                                    </button>
+                                    <button onClick={() => setStep('hub')} className="flex-1 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition">
+                                        [메뉴로 가기]
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            // 렌더링: 2단계 (찬반 토론)
+            const renderStep4 = () => {
+                const showTextInput = [
+                    'topic', 
+                    'reason1', 'reason1_legitimacy', 'reason1_sufficiency', 'reason1_realism',
+                    'reason2', 'reason2_legitimacy', 'reason2_sufficiency', 'reason2_realism',
+                    'changeReason'
+                ].includes(debateStep);
+                const showVoteButtons = debateStep === 'vote';
+                const showChangeVoteButtons = debateStep === 'changeVote';
+                const showEndButton = debateStep === 'end_debate';
+                
+                return (
+                    <div className="flex flex-col h-full bg-white rounded-xl shadow-lg animate-fade-in">
+                        <div className="p-4 border-b">
+                            <button onClick={() => setStep('hub')} className="text-sm text-blue-500 hover:underline mb-2">&larr; 메뉴로 돌아가기</button>
+                            <h2 className="text-xl font-bold text-gray-800">찬반 토론 (소크라테스식)</h2>
+                            <p className="text-sm text-gray-500">AI의 질문에 답하며 논리를 발전시켜보세요.</p>
+                        </div>
+                        <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+                            <div className="space-y-4">
+                            {discussionHistory.map((msg, index) => (
+                                <div key={index} className={`flex items-end gap-2 ${msg.speaker === 'ai' ? 'justify-start' : 'justify-end'}`}>
+                                {msg.speaker === 'ai' && <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-sm shrink-0">AI</div>}
+                                <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-2xl whitespace-pre-wrap ${msg.speaker === 'ai' ? 'bg-gray-200 text-gray-800 rounded-bl-none' : 'bg-blue-600 text-white rounded-br-none'}`}>
+                                    <p className="text-sm">{msg.text}</p>
+                                </div>
+                                </div>
+                            ))}
+                            {isLoading && <div className="flex justify-start"><div className="p-3 rounded-2xl bg-gray-200 text-gray-500">피드백 생성 중...</div></div>}
+                            <div ref={chatEndRef} />
+                            </div>
+                        </div>
+                        <div className="p-4 border-t bg-white">
+                            {showTextInput && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleDebateFlow(currentInput); }} className="flex gap-2">
+                                <input value={currentInput} onChange={(e) => setCurrentInput(e.target.value)} type="text" placeholder="내용을 입력하세요..." className="flex-1 p-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 transition" autoComplete="off" disabled={isLoading} />
+                                <button type="submit" className="bg-blue-600 text-white font-bold py-3 px-5 rounded-full hover:bg-blue-700 transition-transform transform hover:scale-105" disabled={isLoading}>전송</button>
+                                </form>
+                            )}
+                            {showVoteButtons && !isLoading && (
+                                <div className="flex justify-center gap-4">
+                                <button onClick={() => handleDebateVote('pro')} className="flex-1 bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition">찬성</button>
+                                <button onClick={() => handleDebateVote('con')} className="flex-1 bg-red-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-600 transition">반대</button>
+                                </div>
+                            )}
+                            {showChangeVoteButtons && !isLoading && (
+                                <div className="flex justify-center gap-4">
+                                <button onClick={() => handleOpinionChangeVote(true)} className="flex-1 bg-blue-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-600 transition">예, 생각이 바뀌었습니다</button>
+                                <button onClick={() => handleOpinionChangeVote(false)} className="flex-1 bg-gray-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-600 transition">아니오, 그대로입니다</button>
+                                </div>
+                            )}
+                            {showEndButton && (
+                                <div className="flex flex-col sm:flex-row gap-2">
+                                    <button onClick={handleDownloadDebate} className="flex-1 bg-gray-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition">
+                                        [활동지 2 다운로드]
+                                    </button>
+                                    <button onClick={() => setStep('hub')} className="flex-1 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition">
+                                        토론 완료 (메뉴로 가기)
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+            
+            // 렌더링: 3단계 (글쓰기)
+            const renderStep5 = () => {
+                let structureButtonType = null;
+                if (writingStep === 'intro_structure_prompt') structureButtonType = 'intro';
+                if (writingStep === 'body_structure_prompt') structureButtonType = 'body';
+                if (writingStep === 'conclusion_structure_prompt') structureButtonType = 'conclusion';
+
+                const isSelfEvalStep = selfEvaluationQuestions.some(q => q.id === writingStep);
+
+                const showTextInput = (
+                    (
+                        writingStep !== 'self_check_start' && 
+                        writingStep !== 'self_eval_completed' && 
+                        writingStep !== 'essay_complete' &&
+                        !structureButtonType
+                    ) || isSelfEvalStep 
+                ) && !awaitingRevisionChoice && !awaitingStructureConfirmation.show;
+
+                const showFinalEvalButton = writingStep === 'self_eval_completed';
+                const showFullEssayButton = writingStep === 'essay_complete';
+                
+                const { categoryIndex, questionIndex } = checklistProgress;
+                const currentChecklistItem = (writingStep === 'self_check_start' && categoryIndex < selfChecklistItems.length)
+                    ? selfChecklistItems[categoryIndex] 
+                    : null;
+                const currentQuestion = currentChecklistItem 
+                    ? currentChecklistItem.questions[questionIndex] 
+                    : "";
+
+                return (
+                    <div className="flex flex-col h-full bg-white rounded-xl shadow-lg animate-fade-in">
+                        <div className="p-4 border-b">
+                            <button onClick={() => setStep('hub')} className="text-sm text-blue-500 hover:underline mb-2">&larr; 메뉴로 돌아가기</button>
+                            <h2 className="text-xl font-bold text-gray-800">논증형 에세이 쓰기</h2>
+                            <p className="text-sm text-gray-500">AI 튜터의 가이드에 따라 글을 완성해보세요.</p>
+                        </div>
+                        {/* 채팅창 */}
+                        <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+                            <div className="space-y-4">
+                            {discussionHistory.map((msg, index) => (
+                                <div key={index} className={`flex items-end gap-2 ${msg.speaker === 'ai' ? 'justify-start' : 'justify-end'}`}>
+                                    {msg.speaker === 'ai' && <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-sm shrink-0">AI</div>}
+                                    <div className={`max-w-full p-3 rounded-2xl whitespace-pre-wrap ${msg.speaker === 'ai' ? 'bg-gray-200 text-gray-800 rounded-bl-none' : 'bg-blue-600 text-white rounded-br-none'}`}>
+                                        <p className="text-sm" dangerouslySetInnerHTML={{ __html: msg.text.replace(/\n/g, '<br />') }} />
+                                    </div>
+                                </div>
+                            ))}
+                            {isLoading && <div className="flex justify-start"><div className="p-3 rounded-2xl bg-gray-200 text-gray-500">피드백 생성 중...</div></div>}
+                            
+                            {/* 자기 점검 체크리스트 UI */}
+                            {writingStep === 'self_check_start' && currentChecklistItem && (
+                                <div className="p-4 bg-white rounded-lg border border-gray-200 mt-4">
+                                <h3 className="font-bold text-gray-800 mb-3">{currentChecklistItem.category}</h3>
+                                <p className="text-sm text-gray-600 mb-3">전체 글을 다시 읽어보면서 아래 항목에 'Yes' 또는 'No'로 응답해주세요.</p>
+                                <p className="font-semibold text-gray-700 mb-2">{`${questionIndex + 1}. ${currentQuestion}`}</p>
+                                <div className="flex gap-4">
+                                    <button onClick={() => handleChecklistAnswer('Yes')} className="flex-1 bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition">Yes</button>
+                                    <button onClick={() => handleChecklistAnswer('No')} className="flex-1 bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 transition">No</button>
+                                </div>
+                                </div>
+                            )}
+                            <div ref={chatEndRef} />
+                            </div>
+                        </div>
+                        {/* 입력창 및 버튼 */}
+                        <div className="p-4 border-t bg-white">
+                            {showTextInput && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleWritingFlow(currentInput); }} className="flex gap-2">
+                                <input value={currentInput} onChange={(e) => setCurrentInput(e.target.value)} type="text" placeholder="내용을 입력하세요..." className="flex-1 p-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 transition" autoComplete="off" disabled={isLoading} />
+                                <button type="submit" className="bg-blue-600 text-white font-bold py-3 px-5 rounded-full hover:bg-blue-700 transition-transform transform hover:scale-105" disabled={isLoading}>전송</button>
+                                </form>
+                            )}
+
+                            {awaitingRevisionChoice && (
+                                <div className="flex justify-center gap-4">
+                                    <button onClick={() => handleRevisionChoice('yes')} className="flex-1 bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition">
+                                        [예, 수정할께요]
+                                    </button>
+                                    <button onClick={() => handleRevisionChoice('no')} className="flex-1 bg-red-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-600 transition">
+                                        [아니오, 제 방식대로]
+                                    </button>
+                                </div>
+                            )}
+
+                            {structureButtonType && !awaitingStructureConfirmation.show && (
+                                <button onClick={() => handleShowStructure(structureButtonType)} className="w-full bg-gray-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-600 transition">
+                                    {structureButtonType === 'intro' ? '[서론 구조 보기]' :
+                                    structureButtonType === 'body' ? '[본론 구조 보기]' :
+                                    '[결론 구조 보기]'}
+                                </button>
+                            )}
+
+                            {awaitingStructureConfirmation.show && (
+                                <div className="flex justify-center gap-4">
+                                    <button onClick={() => handleStructureConfirmation(true)} className="flex-1 bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition">
+                                        [예, 이해했습니다]
+                                    </button>
+                                    <button onClick={() => handleStructureConfirmation(false)} className="flex-1 bg-red-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-600 transition">
+                                        [아니오, 다시 설명해주세요]
+                                    </button>
+                                </div>
+                            )}
+
+                            {showFullEssayButton && !awaitingRevisionChoice && !awaitingStructureConfirmation.show && (
+                                <button onClick={handleShowFullEssay} className="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 transition">
+                                    [완성된 에세이 보기]
+                                </button>
+                            )}
+
+                            {showFinalEvalButton && !awaitingRevisionChoice && !awaitingStructureConfirmation.show && (
+                                <button onClick={() => setStep('final')} className="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition">
+                                글쓰기 완료 (최종 평가로)
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+            
+            // 렌더링: 6단계 (최종 평가 및 완료)
+            const renderStep6 = () => {
+                return (
+                    <div className="p-6 bg-white rounded-xl shadow-lg animate-fade-in flex flex-col items-center text-center">
+                    {finalStepProgress === 'start' && (
+                        <>
+                        <h2 className="text-2xl font-bold mb-4 text-gray-800">모든 활동 완료!</h2>
+                        <p className="text-gray-600 mb-6">정말 수고 많으셨습니다. 마지막으로 AI가 {userInfo.name}님의 에세이를 평가해드립니다. 아래 버튼을 눌러주세요.</p>
+                        <button onClick={() => handleFinalStepFlow('evaluation_displayed')} className="w-full max-w-xs bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">최종 평가 보기</button>
+                        </>
+                    )}
+                    {finalStepProgress === 'evaluation_displayed' && (
+                        <div className="w-full animate-fade-in">
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">【최종 평가 항목】</h3>
+                        <div className="text-left space-y-3 p-4 border rounded-lg bg-gray-50">
+                            <p><strong>∙ 논증 구조:</strong> 서론-본론-결론이 체계적으로 구성되었습니다. 특히, 각 문단이 유기적으로 연결되어 주장을 효과적으로 강화하고 있습니다.</p>
+                            <p><strong>∙ 논거의 타당성:</strong> 토론 과정에서 다룬 내용을 바탕으로 설득력 있는 근거를 잘 제시했습니다. 객관적인 사실과 논리적 추론이 돋보입니다.</p>
+                            <p><strong>∙ 반대 의견 반박:</strong> 예상되는 반대 의견을 먼저 제시하고, 이를 합리적으로 반박하며 자신의 주장을 더욱 견고하게 만들었습니다.</p>
+                            <p><strong>∙ 독창성:</strong> 단순히 주어진 정보에 의존하지 않고, 자신만의 새로운 관점이나 해결책을 제시하려는 노력이 돋보입니다.</p>
+                            <p><strong>∙ 표현력:</strong> 문장이 간결하고 명확하여 독자가 내용을 쉽게 이해할 수 있습니다. 어휘 선택도 적절합니다.</p>
+                        </div>
+                        <button onClick={() => handleFinalStepFlow('writing_reflection')} className="mt-6 w-full max-w-xs bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">확인</button>
+                        </div>
+                    )}
+                    {finalStepProgress === 'writing_reflection' && (
+                        <div className="w-full animate-fade-in">
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">활동 소감 작성</h3>
+                        <p className="text-gray-600 mb-4">이번 활동을 통해 배우고 느낀 점을 자유롭게 적어주세요.</p>
+                        <textarea value={reflection} onChange={(e) => setReflection(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg h-32 focus:ring-2 focus:ring-blue-500 transition" placeholder="소감을 입력하세요..."></textarea>
+                        <button onClick={() => { if(reflection) handleFinalStepFlow('reflection_submitted'); }} className="mt-4 w-full max-w-xs bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400" disabled={!reflection}>소감 제출하기</button>
+                        </div>
+                    )}
+                    {finalStepProgress === 'reflection_submitted' && (
+                        <div className="w-full animate-fade-in">
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">소중한 의견 감사합니다!</h3>
+                        <p className="text-gray-600 mb-6 p-4 border rounded-lg bg-gray-50">"{reflection}"<br/><br/>- 활동을 통해 배우고 성장하려는 {userInfo.name}님의 의지가 느껴지는 좋은 소감입니다.</p>
+                        
+                        <button onClick={handleDownloadWriting} className="w-full max-w-xs bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 transition mb-2">
+                            [활동지 3+4 다운로드]
+                        </button>
+                        
+                        <p className="text-gray-600 mb-6 mt-4">오늘 {userInfo.name}님은 비판적 사고와 논리적 글쓰기 능력을 한 단계 발전시켰습니다. 정말 훌륭했습니다!</p>
+                        <button onClick={() => setStep('hub')} className="w-full max-w-xs bg-gray-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-600 transition">메뉴로 가기</button>
+                        <button onClick={restartChat} className="w-full max-w-xs bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition mt-2">다시 시작하기 (정보 다시 입력)</button>
+                        </div>
+                    )}
+                    </div>
+                );
+            };
+
+            
+            // --- 6. 메인 렌더링 로직 ---
+            const renderCurrentStep = () => {
+                switch (step) {
+                    case 'info': return renderStep1();
+                    case 'hub': return renderHub();
+                    case 'reading': return renderReadingActivity(); // [MODIFIED]
+                    case 'debate': return renderStep4();
+                    case 'writing': return renderStep5();
+                    case 'final': return renderStep6();
+                    default: return renderStep1();
+                }
+            };
+
+            // --- 7. 최종 JSX 반환 ---
+            return (
+                <div className="bg-gray-100 w-full h-full font-sans flex items-center justify-center p-4" style={{ fontFamily: "'Inter', 'Noto Sans KR', sans-serif" }}>
+                    <div className="w-full max-w-2xl h-[90vh] max-h-[800px] flex flex-col">
+                        {/* 헤더 */}
+                        <div className="bg-blue-600 text-white p-4 rounded-t-xl flex justify-between items-center shadow-md">
+                            <h1 className="text-xl font-bold">AI 독서-토론-글쓰기 챗봇</h1>
+                            <button onClick={restartChat} className="text-xs font-semibold hover:underline">다시 시작</button>
+                        </div>
+                        {/* 본문 (현재 단계 렌더링) */}
+                        <div className="flex-1 bg-gray-200 p-4 md:p-6 overflow-y-auto">
+                            {renderCurrentStep()}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- React 앱을 DOM에 렌더링 ---
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
