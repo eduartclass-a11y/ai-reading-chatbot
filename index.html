@@ -53,27 +53,8 @@
 
     <!-- React 컴포넌트 및 앱 로직 -->
     <script type="text/babel">
-        // 전역 'firebase' 객체를 사용합니다.
-        const { useState, useRef, useEffect } = React;
-
-        // --- Firebase Configuration ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined'
-            ? JSON.parse(__firebase_config)
-            : { apiKey: "YOUR_FALLBACK_API_KEY", authDomain: "...", projectId: "..." }; // Fallback
-        
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-        // --- Initialize Firebase ---
-        let app;
-        let db;
-        let auth;
-        try {
-            app = firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore(app);
-            auth = firebase.auth(app);
-        } catch (error) {
-            console.log("Firebase already initialized or config error:", error);
-        }
+         /* ===== 전역 설정 ===== */
+    const AI_PROXY_URL = "https://weathered-queen-92c0.eduartclass.workers.dev";
 
         // --- 읽기 자료 및 퀴즈 데이터 ---
         const readingMaterials = [
@@ -338,31 +319,6 @@
 
             // --- 이펙트(Effect) ---
             
-            // Firebase 인증
-            useEffect(() => {
-                const authenticateUser = async () => {
-                    if (!auth) {
-                        console.error("Firebase auth is not initialized.");
-                        return;
-                    }
-                    try {
-                        let userCredential;
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            userCredential = await auth.signInWithCustomToken(__initial_auth_token);
-                            console.log("Signed in with Custom Token:", userCredential.user.uid);
-                        } else {
-                            userCredential = await auth.signInAnonymously();
-                            console.log("Signed in Anonymously:", userCredential.user.uid);
-                        }
-                        setSessionId(`${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-                    } catch (error) {
-                        console.error("Firebase authentication error:", error);
-                    }
-                };
-                
-                if(auth) authenticateUser();
-            }, []); 
-
             // 채팅 스크롤
             useEffect(() => {
                 chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -370,91 +326,52 @@
 
             // --- 핵심 핸들러 함수 ---
             
-            // Gemini API 호출
-            const generateAlFeedback = async (prompt, useJson = false) => {
-                setIsLoading(true);
-                try {
-                    const systemPrompt = "당신은 학생의 논리적 사고와 글쓰기를 돕는 친절하고 격려하는 튜터입니다. 학생의 입력을 평가하고 점진적인 개선을 유도하는 피드백을 제공합니다.";
-                    const userQuery = prompt;
-                    const apiKey = ""; 
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+          // Gemini API 호출 (Cloudflare Workers 프록시 버전)
+const generateAIFeedback = async (prompt, useJson = false) => {
+    setIsLoading(true);
+    try {
+        const systemPrompt =
+            "당신은 학생의 논리적 사고와 글쓰기를 돕는 친절하고 격려하는 튜터입니다. 학생의 입력을 평가하고 점진적인 개선을 유도하는 피드백을 제공합니다.";
 
-                    const payload = {
-                        contents: [{ parts: [{ text: userQuery }] }],
-                        systemInstruction: {
-                            parts: [{ text: systemPrompt }]
-                        },
-                    };
-                    
-                    if (useJson) {
-                        payload.generationConfig = {
-                            responseMimeType: "application/json",
-                            responseSchema: {
-                                type: "OBJECT",
-                                properties: {
-                                    quiz: {
-                                        type: "ARRAY",
-                                        items: {
-                                            type: "OBJECT",
-                                            properties: {
-                                                type: { "type": "STRING" },
-                                                question: { "type": "STRING" },
-                                                answer: { "type": "STRING" },
-                                                options: { 
-                                                    type: "ARRAY", 
-                                                    items: { "type": "STRING" } 
-                                                },
-                                                explanation: { "type": "STRING" }
-                                            },
-                                            "required": ["type", "question", "answer", "explanation"]
-                                        }
-                                    }
-                                },
-                                "required": ["quiz"]
-                            }
-                        };
-                    }
+        const payload = {
+            contents: [{ parts: [{ text: prompt }] }],
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            }
+        };
 
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
-                    
-                    const result = await response.json();
-                    
-                    if (result.candidates && result.candidates[0].content?.parts?.[0]?.text) {
-                        return result.candidates[0].content.parts[0].text;
-                    } else {
-                        return "죄송합니다. 피드백을 생성하는 데 문제가 발생했습니다.";
-                    }
-                } catch (error) {
-                    console.error("Error generating Al feedback:", error);
-                    return "오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.";
-                } finally {
-                    setIsLoading(false);
-                }
+        if (useJson) {
+            payload.generationConfig = {
+                responseMimeType: "application/json"
             };
+        }
+
+        const response = await fetch(AI_PROXY_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Proxy call failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        return (
+            result.candidates?.[0]?.content?.parts?.[0]?.text
+            ?? "피드백을 생성하지 못했습니다."
+        );
+
+    } catch (error) {
+        console.error("AI feedback error:", error);
+        return "오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+    } finally {
+        setIsLoading(false);
+    }
+};
+
             
-            // Firestore 데이터 저장
-            const saveData = async (data) => {
-                if (!sessionId || !db || !auth || !auth.currentUser) {
-                    console.error("Session ID, DB, or User not set. Cannot save data.");
-                    return;
-                }
-                const userId = auth.currentUser.uid;
-                const docPath = `artifacts/${appId}/users/${userId}/student_sessions/${sessionId}`;
-                try {
-                    const docRef = db.doc(docPath);
-                    await docRef.set(data, { merge: true }); 
-                    console.log("Data saved successfully for session:", sessionId);
-                } catch (e) {
-                    console.error("Error adding document: ", e);
-                }
-            };
-
             // 1단계: 학생 정보 제출
             const handleUserInfoSubmit = (e) => {
                 e.preventDefault();
