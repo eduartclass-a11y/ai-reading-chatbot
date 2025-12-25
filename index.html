@@ -526,27 +526,15 @@ const generateAIFeedback = async (prompt, useJson = false) => {
                     // 3. 읽기 후 활동
                     case 'post_1_my_summary':
                         nextReadingStep = 'post_2_ai_summary';
-                        aiMessage = '좋은 요약입니다. \n\n이제 NotebookLM 사이트와 같은 AI 도구를 사용하여 같은 자료를 요약한 후, 그 [AI가 요약한 내용]을 복사하여 붙여넣어주세요. 비교 분석을 도와드리겠습니다.';
+                        aiMessage = '좋은 요약입니다. \n\n이제 NotebookLM 사이트와 같은 AI 도구를 사용하여 같은 자료를 요약한 후, 그 [AI가 요약한 내용]을 복사하여 붙여넣어주세요.';
                         break;
                     // [MODIFIED] AI 비교 삭제, 학생 분석 단계 추가
                     case 'post_2_ai_summary':
                         nextReadingStep = 'post_2b_self_comparison';
                         aiMessage = 'AI 요약이 입력되었습니다. \n\n이제 [나의 요약]과 [AI 요약]을 스스로 비교해보고, 두 요약의 [차이점과 개선점]을 분석하여 입력해주세요.';
                         break;
-                    // [NEW] 학생 분석에 대한 피드백 단계
-                    case 'post_2b_self_comparison':
-                        const comparisonAnalysis = userInput;
-                        const feedbackPrompt = `학생이 자신의 요약과 AI의 요약을 비교 분석한 내용입니다: "${comparisonAnalysis}" \n\n이 분석에 대해 간단히 격려하는 피드백을 제공해주세요. (예: "좋은 분석입니다. 차이점을 잘 파악하셨네요.")`;
-                        
-                        addMessage('ai', '분석 내용을 검토 중입니다...');
-                        const aiFeedback = await generateAlFeedback(feedbackPrompt);
-                        
-                        aiMessage = `${aiFeedback}\n\n이 피드백과 스스로의 분석을 참고하여 '개선된 나의 요약'을 다시 작성해주세요.`;
-                        nextReadingStep = 'post_3_improved_summary';
-                        break;
-                    case 'post_3_improved_summary':
-                        nextReadingStep = 'stance_1_choice';
-                        aiMessage = '개선된 요약이 확인되었습니다. [읽기 후 활동]이 완료되었습니다. \n\n[나의 입장 정리] 활동을 시작하겠습니다. \n\n이 주제에 대한 당신의 입장은 무엇인가요?';
+                    
+                        aiMessage = '[읽기 후 활동]이 완료되었습니다. \n\n[나의 입장 정리] 활동을 시작하겠습니다. \n\n이 주제에 대한 당신의 입장은 무엇인가요?';
                         break;
 
                     // 4. 나의 입장 정리
