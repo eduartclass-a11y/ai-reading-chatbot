@@ -417,7 +417,7 @@ const generateAIFeedback = async (prompt, useJson = false) => {
 3.  type: "short", question: (단답형 질문), answer: (정답 단어), explanation: (해설)`;
 
                 try {
-                    const jsonResponse = await generateAlFeedback(prompt, true); // JSON 모드 활성화
+                    const jsonResponse = await generateAIFeedback(prompt, true); // JSON 모드 활성화
                     const parsedData = JSON.parse(jsonResponse);
                     
                     if (parsedData.quiz && parsedData.quiz.length === 3) {
@@ -533,8 +533,9 @@ const generateAIFeedback = async (prompt, useJson = false) => {
                         nextReadingStep = 'post_2b_self_comparison';
                         aiMessage = 'AI 요약이 입력되었습니다. \n\n이제 [나의 요약]과 [AI 요약]을 스스로 비교해보고, 두 요약의 [차이점과 개선점]을 분석하여 입력해주세요.';
                         break;
-                    
-                        aiMessage = '[읽기 후 활동]이 완료되었습니다. \n\n[나의 입장 정리] 활동을 시작하겠습니다. \n\n이 주제에 대한 당신의 입장은 무엇인가요?';
+                    case 'post_2b_self_comparison':
+   			 nextReadingStep = 'stance_1_choice';
+                         aiMessage = '[읽기 후 활동]이 완료되었습니다. \n\n[나의 입장 정리] 활동을 시작하겠습니다. \n\n이 주제에 대한 당신의 입장은 무엇인가요?';
                         break;
 
                     // 4. 나의 입장 정리
