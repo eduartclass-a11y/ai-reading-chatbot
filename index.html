@@ -53,8 +53,16 @@
 
     <!-- React 컴포넌트 및 앱 로직 -->
     <script type="text/babel">
-         /* ===== 전역 설정 ===== */
-    const AI_PROXY_URL = "https://weathered-queen-92c0.eduartclass.workers.dev";
+ 	const { useState, useEffect } = React;
+
+ 	const App = () => {
+      return <h1>AI 독서 토론 챗봇</h1>;
+    };
+
+       ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ 
+        /* ===== 전역 설정 ===== */
+	const AI_PROXY_URL = "https://weathered-queen-92c0.eduartclass.workers.dev";
 
         // --- 읽기 자료 및 퀴즈 데이터 ---
         const readingMaterials = [
@@ -1897,11 +1905,7 @@ ${noItems.map(item => `- ${item}`).join('\n')}
                 </div>
             );
         }
-
-        // --- React 앱을 DOM에 렌더링 ---
-        const container = document.getElementById('root');
-        const root = ReactDOM.createRoot(container);
-        root.render(<App />);
+       
     </script>
 </body>
 </html>
