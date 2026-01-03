@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>AI 독서 토론 챗봇 – 1단계 독서 활동</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+<style>
+body { background:#f3f4f6; font-family:"Noto Sans KR",sans-serif; }
+.container { max-width:760px; margin:30px auto; padding:16px; }
+.card { background:#fff; border-radius:16px; padding:20px; box-shadow:0 4px 10px rgba(0,0,0,0.1); }
+h1 { font-size:1.3rem; margin-bottom:12px; }
+.ai { background:#eef2ff; padding:12px; border-radius:10px; margin-bottom:10px; }
+.user { background:#dcfce7; padding:12px; border-radius:10px; margin-bottom:10px; text-align:right; }
+textarea { width:100%; min-height:90px; padding:10px; border-radius:8px; border:1px solid #ccc; }
+button { margin-top:10px; padding:10px 16px; border:none; border-radius:8px; background:#2563eb; color:white; font-size:1rem; cursor:pointer; }
+</style>
+</head>
+
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState } = React;
+
+function App(){
+
+  const questions = [
+    "① 이 책(글)을 선택한 이유는 무엇인가요?",
+    "② 이 주제에 대해 이미 알고 있는 것은 무엇인가요?",
+    "③ 이 글을 읽기 전에 궁금했던 점은 무엇인가요?",
+    "④ 글의 중심 주제는 무엇이라고 생각하나요?",
+    "⑤ 글에서 가장 중요한 용어 1가지를 자신의 말로 설명해보세요.",
+    "⑥ 또 다른 핵심 용어 1가지를 설명해보세요.",
+    "⑦ 글의 주장에 대해 찬성하는 이유 1가지를 적어보세요.",
+    "⑧ 글의 주장에 대해 반대하거나 의문이 드는 점 1가지를 적어보세요.",
+    "⑨ 읽으면서 이해하기 어려웠던 부분은 무엇이었나요?",
+    "⑩ 가장 인상 깊었던 문장이나 장면을 적어보세요."
+  ];
+
+  const [step, setStep] = useState(0);
+  const [messages, setMessages] = useState([{ role:"ai", text: questions[0] }]);
+  const [input, setInput] = useState("");
+  const [answers, setAnswers] = useState([]);
+
+  const sendAnswer = () => {
+    if (!input.trim()) return;
+
+    const newMessages = [...messages, { role:"user", text: input }];
+    const newAnswers = [...answers, input];
+
+    if (step + 1 < questions.length) {
+      newMessages.push({ role:"ai", text: questions[step + 1] });
+    } else {
+      newMessages.push({ role:"ai", text: "1단계 독서 활동이 모두 완료되었습니다. 활동지를 다운로드해 주세요." });
+    }
+
+    setMessages(newMessages);
+    setAnswers(newAnswers);
+    setInput("");
+    setStep(step + 1);
+  };
+
+  const downloadTxt = () => {
+    let content = "📘 1단계 독서 활동 기록\n\n";
+    answers.forEach((a, i) => {
+      content += questions[i] + "\n";
+      content += a + "\n\n";
+    });
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "1단계_독서활동_기록.txt";
+    link.click();
+  };
+
+  return (
+    <div className="container">
+      <div className="card">
+        <h1>AI 독서 토론 – 1단계 독서 활동</h1>
+
+        {messages.map((m, i) => (
+          <div key={i} className={m.role === "ai" ? "ai" : "user"}>{m.text}</div>
+        ))}
+
+        {step < questions.length && (
+          <>
+            <textarea
+              placeholder="여기에 자신의 생각을 입력하세요."
+              value={input}
+              onChange={e => setInput(e.target.value)}
+            />
+            <button onClick={sendAnswer}>다음</button>
+          </>
+        )}
+
+        {step >= questions.length && (
+          <button onClick={downloadTxt}>📄 활동지 다운로드</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+
+</body>
+</html>
